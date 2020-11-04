@@ -1,0 +1,26 @@
+{
+  "name": "i2ctest",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "express": "^4.17.1",
+    "gps": "^0.6.0",
+    "i2c-bus": "^5.2.1",
+    "lcdi2c": "^1.0.6",
+    "lodash": "^4.17.11",
+    "lsm303": "^0.3.0",
+    "lsm303-rx": "^2.0.1",
+    "raspi": "^6.0.1",
+    "raspi-i2c": "^6.2.4",
+    "raspi-kit-ads1x15": "^1.0.0",
+    "serialport": "^9.0.2",
+    "socket.io": "^2.3.0"
+  }
+}

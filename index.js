@@ -25,17 +25,21 @@ server.listen(3000, () => { console.log('listening on *:3000'); })
 io.on('connection', socket => {
 	console.log('a user connected(new socket created)')
 
-	socket.on('disconnect', () => {
-		console.log('user disconnected')
-	});
+	socket.on('disconnect', () => console.log('user disconnected'))
+
 	socket.on('chat message', msg => {
 		console.log('message: ' + msg)
+
 		//mirror message back to user
 		io.emit('chat message', msg)
-		if (msg === 'gps off') {
-			gps.send(msg)
-		}
+
+		if (msg === 'gps off') gps.send(msg)
 		if (msg === 'gps on') gps.send(msg)
+	})
+
+	//RTCM TEST
+	socket.on('rtcm', rtcmData =>{
+		console.log('RTCM: ' + rtcmData)
 	})
 })
 

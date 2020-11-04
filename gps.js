@@ -31,7 +31,7 @@ process.on('sigterm', () => {
 })
 
 //GPS parser received data and processes it
-gpsOutput = data => {
+const gpsOutput = data => {
 	if (data.lat && data.lon) {
 		//write message to parent caller
 		process.send({ lat: data.lat, lon: data.lon })

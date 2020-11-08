@@ -30,7 +30,11 @@ serial.on('error', err => {
 process.on('message', msg => {
 	if (msg === 'gps off') gps.off('data');
 	if (msg === 'gps on') gps.on('data', gpsOutput)
-	if (msg === 'rtcm') gps.on('data', gpsOutput)
+	if (msg === 'rtcm') {
+		console.log('rtcm signal received by gps module')
+		
+
+	}
 })
 
 process.on('sigterm', () => {

@@ -38,7 +38,7 @@ INSTALLING SERVICE:
 //service configration foa automatin plugin-unplug:
 https://unix.stackexchange.com/questions/446225/is-there-a-way-for-a-systemd-service-to-find-out-a-device-path-and-restart-if-it
 
-//check udev_trigger and chmod it +x (to make executable)
+//check udev_trigger and chmod it +x (to make executable)  // this is only used for logging
 
 //restart systemd daemons if changed
 sudo systemctl daemon-reload
@@ -52,16 +52,14 @@ systemctl --type=service --state=running
 //to get a list of all available device unit files use 
 systemctl list-units --all --full | grep ".device"
 
-///Checd udev admin page and monitor to observe device connection and device statuses and info
+///Check udev admin page and monitor to observe device connection and device statuses and info
 udevadm monitor
 udevadm info -a -n /dev/ttyACM0 | less
-
-
 
 //add udev rule, this will allow GPS to be innitialized when plugged in and service for it will start automatically
 ACTION=="add", SUBSYSTEM=="tty", KERNEL=="ttyACM*", ATTRS{idVendor}=="1546", RUN+="/home/pi/udev_trigger.sh", TAG+="systemd", ENV{SYSTEMD_WANTS}+="location@%k.service"
 //to the
-/etc/udev/rules.d/99-com.rule or other rules file that is there
+> sudo nano /etc/udev/rules.d/99-com.rules or other rules file that is there
 //reload udev
 sudo udevadm control --reload
 
@@ -86,8 +84,18 @@ sudo ln -s /usr/local/ddnsupdater/ddnsupdater.service ddnsupdater.service
 
 Start it with systemctl start myapp.
 
-Enable it to run on boot with systemctl enable myapp.
+Enable it to run on boot with systemctl enable myapp. - not needed because of the device nature
 
 See logs with journalctl -u myapp
 
-This is taken from How we deploy node apps on Linux, 2018 edition, which also includes commands to generate an AWS/DigitalOcean/Azure CloudConfig to build Linux/node servers (including the .service file).
+
+//RTK2go
+Sir or Madam: The requested mountPt has been added to the SNIP NTRIP Caster operating
+at RTK2go.com:2101 and may now be used.
+
+      The mountPt name is: Wexford  -  (this is case sensitive and must match to be used)
+      With the password: 6n9c2TxqKwuc-  (also case sensitive)
+      Other details [ Wexford,     USA]
+
+If you have been connecting with another password (such as WEEK21xx) you must now use the above.
+This connection is expected to use NTRIP Rev1 format (contact us if Rev2 is preferred)

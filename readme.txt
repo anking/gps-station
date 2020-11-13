@@ -1,5 +1,3 @@
-network http service will be running on 192.168.0.126:3000
-
 To start casting base station location to a public caster from a ZED-F9P board the following steps needs performed:
 -raspberry pi3+ (tested)
 -download and install u-center from u-blox (https://www.u-blox.com/en/product/u-center)
@@ -31,7 +29,7 @@ Ctrl-a+d or - Ctrl-a+Ctrl-d - "minimize" screen, screen -r to restore it.
 
 
 
-INSTALLING SERVICE:
+INSTALLING STR2STR SERVICE:
 >sudo make install
 
 
@@ -99,3 +97,9 @@ at RTK2go.com:2101 and may now be used.
 
 If you have been connecting with another password (such as WEEK21xx) you must now use the above.
 This connection is expected to use NTRIP Rev1 format (contact us if Rev2 is preferred)
+
+//INSTALLING WEB SERVICE
+network http service will be running on 192.168.0.126:3000
+
+sudo ln -s /home/pi/gps-station/gpsstationweb.service /etc/systemd/system/gpsstationweb.service
+sudo systemctl enable gpsstationweb

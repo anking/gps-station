@@ -13,35 +13,11 @@
 
 <body>
 	<div>
-		GPS Base Station
+		GPS Base Station, no location data because module configured to output only RTCM data(no NMEA)
 		<hr />
 		Latitude: <input type="text" id="lat" value="">
 		<br />
 		Longitude: <input type="text" id="lon" value="">
-	</div>
-
-	<br><br>
-
-	<div>
-		Sonars
-		<hr />
-		Channel 0: <input type="text" id="ch0" value="">
-		<br />
-		Channel 1: <input type="text" id="ch1" value="">
-		<br />
-		Channel 2: <input type="text" id="ch2" value="">
-		<br />
-		Channel 3: <input type="text" id="ch3" value="">
-		<br />
-	</div>
-
-	<br><br>
-
-	<div>
-		Compass
-		<hr />
-		Heading: <input type="text" id="heading" value="">
-		<br />
 	</div>
 
 	<br><br>
@@ -81,26 +57,6 @@
 						lng: msg.gps.lon
 					})
 					//marker.setMap(map);
-				}
-
-				if (msg.sonars) {
-					$('#ch0').val(msg.sonars.CHANNEL_0)
-					$('#ch1').val(msg.sonars.CHANNEL_1)
-					$('#ch2').val(msg.sonars.CHANNEL_2)
-					$('#ch3').val(msg.sonars.CHANNEL_3)
-				}
-
-				if (msg.compass) {
-
-					//update heading value on the page
-					$('#heading').val(msg.compass.heading)
-
-					//update heading value of the marker on the map
-					marker.setIcon(({
-						path: google.maps.SymbolPath.BACKWARD_CLOSED_ARROW,
-						scale: 6,
-						rotation: msg.compass.heading
-					}))
 				}
 			})
 		})

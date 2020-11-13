@@ -38,7 +38,7 @@ io.on('connection', socket => {
 	})
 
 	//RTCM TEST
-	socket.on('rtcm', rtcmData =>{
+	socket.on('rtcm', rtcmData => {
 		console.log('RTCM: ' + rtcmData)
 	})
 })
@@ -55,12 +55,7 @@ gps.on('message', data => {
 })
 
 // Update browser
-setInterval(() => {
-	io.emit('sensor data', {
-		gps: gps_data,
-	}
-	)
-}, 150)
+setInterval(() => io.emit('sensor data', { gps: gps_data }), 150)
 
 
 //If process forcely terminanted - clear out

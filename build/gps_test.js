@@ -12,7 +12,7 @@ connectSerial();
 function connectSerial() {
     SerialPort.list()
         .then(function (info) {
-        //output info about all serail devices
+        //output info about all serisl devices
         //console.log(info)
         //Find our device
         var device = _.find(info, function (device) { return device.vendorId === '1546' && device.productId.toLowerCase() === '01a9'; });

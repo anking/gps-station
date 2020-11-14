@@ -18,6 +18,12 @@
 		Latitude: <input type="text" id="lat" value="">
 		<br />
 		Longitude: <input type="text" id="lon" value="">
+		<br />
+		Accuracy: <input type="text" id="accuracy" value="">
+		<br />
+		Survey Time(s): <input type="text" id="surveyTime" value="">
+		<br />
+		Survey Valid: <input type="text" id="surveyValid" value="">
 	</div>
 
 	<br><br>
@@ -57,6 +63,13 @@
 						lng: msg.gps.lon
 					})
 					//marker.setMap(map);
+				}
+
+				if (msg.gps && msg.gps.survey_time && msg.gps.survey_valid && msg.gps.accuracy) {
+
+					$('#accuracy').val(msg.gps.accuracy)
+					$('#surveyTime').val(msg.gps.survey_time)
+					$('#surveyValid').val(msg.gps.survey_valid)
 				}
 			})
 		})

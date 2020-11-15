@@ -37,6 +37,8 @@ io.on('connection', socket => {
 		if (msg === 'gps on') gps.send(msg)
 	})
 
+	socket.on('RESTART_SURVEY', accuracy => gps && !gps.killed && gps.send('RESTART_SURVEY:'+accuracy))
+
 	//RTCM TEST
 	socket.on('rtcm', rtcmData => {
 		console.log('RTCM: ' + rtcmData)

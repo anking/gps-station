@@ -19,11 +19,13 @@
 		<br />
 		Longitude: <input type="text" id="lon" value="">
 		<br />
-		Accuracy: <input type="text" id="accuracy" value="">
+		Accuracy(m): <input type="text" id="accuracy" value=""> Current Minimum: <input type="text" id="accuracySetting" value=""> Default(3m)
 		<br />
 		Survey Time(s): <input type="text" id="surveyTime" value="">
 		<br />
 		Survey Valid: <input type="text" id="surveyValid" value="">
+		<br />
+		<Button id="restartSurveyBtn">Restart Survey</Button> New Accuracy: <input type="text" id="newAccuracySetting" value="">
 	</div>
 
 	<br><br>
@@ -53,24 +55,29 @@
 			socket.on('sensor data', msg => {
 				//console.log(msg);
 
-				if (msg.gps && msg.gps.lat && msg.gps.lon) {
+				if (msg.gps) {
 
-					$('#lat').val(msg.gps.lat)
-					$('#lon').val(msg.gps.lon)
+					if (msg.gps.lat && msg.gps.lon) {
 
-					marker && marker.setPosition({
-						lat: msg.gps.lat,
-						lng: msg.gps.lon
-					})
-					//marker.setMap(map);
+						$('#lat').val(msg.gps.lat)
+						$('#lon').val(msg.gps.lon)
+
+						marker && marker.setPosition({
+							lat: msg.gps.lat,
+							lng: msg.gps.lon
+						})
+						//marker.setMap(map);
+					}
+
+					msg.gps.accuracy && $('#accuracy').val(msg.gps.accuracy)
+					msg.gps.survey_time && $('#surveyTime').val(msg.gps.survey_time)
+					msg.gps.survey_valid && $('#surveyValid').val(msg.gps.survey_valid)
+					msg.gps.accuracy_setting && $('#accuracySetting').val(msg.gps.accuracy_setting)
 				}
+			})
 
-				if (msg.gps && msg.gps.survey_time && msg.gps.survey_valid && msg.gps.accuracy) {
-
-					$('#accuracy').val(msg.gps.accuracy)
-					$('#surveyTime').val(msg.gps.survey_time)
-					$('#surveyValid').val(msg.gps.survey_valid)
-				}
+			$('#restartSurveyBtn').click(()=>{
+				socket.emit("RESTART_SURVEY", $('#newAccuracySetting').val())
 			})
 		})
 

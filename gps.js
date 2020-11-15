@@ -3,12 +3,20 @@ const SerialPort = require('serialport');
 const GPS = require('gps')
 const net = require('net');
 const fs = require('fs')
-const { exec } = require('child_process');
+const { exec, spawn } = require('child_process');
 const _ = require('lodash');
 const rl = require('readline');
 
+//SETTINGS
+const ntripServer = 'rtk2go.com';
+const ntripPassword = '6n9c2TxqKwuc';
+const ntripMountpoint = 'Wexford';
+const ntripPort = 2101;
+let gpsAccuracy = 3.000;		//in meters
+let gpsSurveyTime = 60;		//in seconds	
+
 //Create objects
-const gps = new GPS;
+let gps = null;
 const nmeaDataSocketName = 'zed-f9p-nmea-data.sock';
 const rtcmDataSocketName = 'zed-f9p-rtcm-data.sock';
 const syncDataSocketName = 'zed-f9p-sync-data.sock';
@@ -17,23 +25,16 @@ var processDataObject = {		//this object is being used to send data to the main 
 	lon: null,
 	survey_time: null,
 	accuracy: null,
-	survey_valid: false
+	survey_valid: false,
+	accuracy_setting: gpsAccuracy
 };
-
-//SETTINGS
-const ntripServer = 'rtk2go.com';
-const ntripPassword = '6n9c2TxqKwuc';
-const ntripMountpoint = 'Wexford';
-const ntripPort = 2101;
-const gpsAccuracy = 3.000;		//in meters
-const gpsSurveyTime = 60;		//in seconds	
 
 //local vars
 let serialDevice = null;
 let nmeaDataSocket = null;		//data socket for incoming raw nmea data
 let rtcmDataSocket = null;		//data socket for incoming raw rtcm data
 let syncDataSocket = null;		//data socket for internal data commands rather than rtcm. Packets of data in this socket are just plain strings separated by \r\n
-let childF9pProcess = null;		//process hangler for f9p driver
+let f9pDriverProcess = null;		//process hangler for f9p driver
 
 //Wrap everything in async function for proper await handling
 (async () => {
@@ -44,20 +45,7 @@ let childF9pProcess = null;		//process hangler for f9p driver
 			//file exists/ socket cannot be opened
 			console.log('Node receiving sockets cannot be opened because temporary files that were created for it was never removed from /tmp directory')
 
-			if (fs.existsSync('/tmp/' + rtcmDataSocketName)) {
-				console.log('trying to remove /tmp/' + rtcmDataSocketName)
-				fs.unlinkSync('/tmp/' + rtcmDataSocketName)
-			}
-
-			if (fs.existsSync('/tmp/' + syncDataSocketName)) {
-				console.log('trying to remove /tmp/' + syncDataSocketName)
-				fs.unlinkSync('/tmp/' + syncDataSocketName)
-			}
-
-			if (fs.existsSync('/tmp/' + nmeaDataSocketName)) {
-				console.log('trying to remove /tmp/' + nmeaDataSocketName)
-				fs.unlinkSync('/tmp/' + nmeaDataSocketName)
-			}
+			unlinkSocketFiles();
 		} else {
 			console.log('Receive sockets can be opened successfully')
 		}
@@ -116,7 +104,11 @@ let childF9pProcess = null;		//process hangler for f9p driver
 	Socket for NMEA data
 	*/
 	nmeaDataSocket = net.createServer(socket => {
-		socket.on('data', c => gps.updatePartial(c)); //send character to gps data parser
+		try{
+			socket.on('data', c => gps && gps.updatePartial(c)); //send character to gps data parser
+		} catch(e) {
+			console.log("Caught GPS lib error: " + JSON.stringify(e));
+		}
 	});
 
 	//Start listening on a changed for this socket
@@ -155,46 +147,31 @@ let childF9pProcess = null;		//process hangler for f9p driver
 	//Start listening on a changed for this socket
 	syncDataSocket.listen('/tmp/' + syncDataSocketName);
 
+	//connect f9p driver .net core application
+	connectF9pDriver();
 
-
-
-	/*
-	Start F9p module reader (.NET application)
-	*/
-	console.log('Starting f9p driver application...')
-	let runCommand = __dirname+'/f9p/Zedf9p -server -com-port ' + serialDevice.path + '  -ntrip-server ' + ntripServer + ' -ntrip-password ' + ntripPassword + ' -ntrip-port ' + ntripPort + ' -ntrip-mountpoint ' + ntripMountpoint + ' -rtcm-accuracy-req ' + gpsAccuracy + ' -rtcm-survey-time ' + gpsSurveyTime
-	console.log('>'+runCommand);
-	childF9pProcess = exec(runCommand, 
-	(error, stdout, stderr) => {
-		if (error) {
-			//some error occurred
-			console.error('Error while starting driver: ' + error);
-			process.exit();
-		} else {
-			// the *entire* stdout and stderr (buffered)
-			console.log('stdout: ' + stdout);
-			console.log('stderr: ' + stderr);
-		}
-	});
-
-	console.log('gps output hookup...')
-
-	//GPS parser received data and processes it
+	//console.log('gps output hookup...')	
 	//wire up data event handler
-	gps.on('data', data => {
-		if (data.lat && data.lon) {
-			processDataObject.lat = data.lat;
-			processDataObject.lon = data.lon;
-
-			//console.log(data.lat, data.lon)
-
-			//write message to parent caller
-			//process.send && process.send({ lat: data.lat, lon: data.lon })
-		}
-	});
+	//gps.on('data', gpsOutput);
 
 	//commands comming from the http server side
 	process.on('message', msg => {
+		if(msg.includes('RESTART_SURVEY')) {
+			let restartSettings = msg.split(':');
+			//console.log(restartSettings[0], restartSettings[1])
+
+			//set new survey parameters and restart gps driver
+			gpsAccuracy = restartSettings[1] || 3;
+
+			//update accuracy in outgoing object
+			processDataObject.accuracy_setting = gpsAccuracy;
+
+			//restart driver
+			disconnectF9pDriver();
+
+			//wait a bit before restarting
+			setTimeout(connectF9pDriver, 250);
+		}
 		// if (msg === 'gps off') gps.off('data');
 		// if (msg === 'gps on') gps.on('data', gpsOutput)
 		// if (msg === 'rtcm') {
@@ -205,20 +182,98 @@ let childF9pProcess = null;		//process hangler for f9p driver
 	})
 })();
 
+//GPS parser received data and processes it
+const gpsOutput = data => {
+	if (data.lat && data.lon) {
+		processDataObject.lat = data.lat;
+		processDataObject.lon = data.lon;
+	}
+}
+
+/*
+Start F9p module reader (.NET application)
+*/
+const connectF9pDriver = () => {
+	console.log('Starting f9p driver application...')
+
+	//array of args to call when spawning the proces
+	args = [
+		'-server', //server operation mode
+		'-com-port', serialDevice.path,
+		'-ntrip-server', ntripServer,
+		'-ntrip-password', ntripPassword,
+		'-ntrip-port', ntripPort,
+		'-ntrip-mountpoint', ntripMountpoint,
+		'-rtcm-accuracy-req', gpsAccuracy,
+		'-rtcm-survey-time', gpsSurveyTime,
+	]
+
+	f9pDriverProcess = spawn(__dirname + '/f9p/Zedf9p', args);
+	//streamIn.pipe(f9pDriverProcess.stdin);
+
+	f9pDriverProcess.stdout.on('data', data => {
+		console.log(('F9p Driver: ' + data).trim());
+	});
+
+	f9pDriverProcess.stderr.on('data', data => {
+		console.error('F9p Driver Error: ' + data);
+	});
+
+	f9pDriverProcess.on('close', code => {
+		console.log('F9p Driver: child process exited with code ' + code);
+	});
+
+	console.log('gps output hookup...')
+	gps = new GPS;
+	gps.on('data', gpsOutput)
+}
+
+/*
+Disconnect f9p driver application
+*/
+const disconnectF9pDriver = () => {
+
+	//disconnect gps listener(otherwice it can cause an application exception that causes crash)
+	gps && gps.off() && (gps = null);
+
+	f9pDriverProcess && console.log(f9pDriverProcess.kill()) && (f9pDriverProcess = null)
+}
+
 // Update main process
 setInterval(() => process.send && process.send(processDataObject), 150)
+
+//Unlink files assosiated with sockets
+const unlinkSocketFiles = () => {
+	if (fs.existsSync('/tmp/' + rtcmDataSocketName)) {
+		console.log('trying to remove /tmp/' + rtcmDataSocketName)
+		fs.unlinkSync('/tmp/' + rtcmDataSocketName)
+	}
+
+	if (fs.existsSync('/tmp/' + syncDataSocketName)) {
+		console.log('trying to remove /tmp/' + syncDataSocketName)
+		fs.unlinkSync('/tmp/' + syncDataSocketName)
+	}
+
+	if (fs.existsSync('/tmp/' + nmeaDataSocketName)) {
+		console.log('trying to remove /tmp/' + nmeaDataSocketName)
+		fs.unlinkSync('/tmp/' + nmeaDataSocketName)
+	}
+}
 
 //Do any socket cleanup before this app exits
 const exitHandler = (options, exitCode) => {
 	//if (options.cleanup) console.log('clean');
 
 	//terminate child process
-	childF9pProcess && childF9pProcess.kill('SIGINT');
+	f9pDriverProcess && console.log(f9pDriverProcess.kill());
 
 	//close unix sockets
 	nmeaDataSocket && nmeaDataSocket.close();
 	rtcmDataSocket && rtcmDataSocket.close();
 	syncDataSocket && syncDataSocket.close();
+
+	//remove socket handlers
+	unlinkSocketFiles()
 
 	if (exitCode || exitCode === 0) console.log('Exit Code: ' + exitCode);
 	if (options.exit) process.exit();

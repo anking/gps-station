@@ -37,11 +37,11 @@ let syncDataSocket = null;		//data socket for internal data commands rather than
 let f9pDriverProcess = null;		//process hangler for f9p driver
 
 //Wrap everything in async function for proper await handling
-(async () => {
+const main = async () => {
 
 	// Check if receiving socket for communication with f9p application can be opened(if a file from eprivious connection exists it may be a problem)
 	try {
-		if (fs.existsSync('/tmp/' + nmeaDataSocketName) || fs.existsSync('/tmp/' + syncDataSocketName) || fs.existsSync('/tmp/' + syncDataSocketName)) {
+		if (fs.existsSync('/tmp/' + nmeaDataSocketName) || fs.existsSync('/tmp/' + rtcmDataSocketName) || fs.existsSync('/tmp/' + syncDataSocketName)) {
 			//file exists/ socket cannot be opened
 			console.log('Node receiving sockets cannot be opened because temporary files that were created for it was never removed from /tmp directory')
 
@@ -104,9 +104,9 @@ let f9pDriverProcess = null;		//process hangler for f9p driver
 	Socket for NMEA data
 	*/
 	nmeaDataSocket = net.createServer(socket => {
-		try{
+		try {
 			socket.on('data', c => gps && gps.updatePartial(c)); //send character to gps data parser
-		} catch(e) {
+		} catch (e) {
 			console.log("Caught GPS lib error: " + JSON.stringify(e));
 		}
 	});
@@ -131,14 +131,14 @@ let f9pDriverProcess = null;		//process hangler for f9p driver
 		//write line in a console for now
 		rli.on('line', line => {
 			//console.log(line)
-			if(line.includes(':')){
+			if (line.includes(':')) {
 				let command = line.split(':');
 
-				switch(command[0]){
+				switch (command[0]) {
 					case 'SURVEY_TIME': processDataObject.survey_time = command[1]; break;
 					case 'ACCURACY': processDataObject.accuracy = command[1]; break;
 					case 'SURVEY_VALID': processDataObject.survey_valid = command[1]; break;
-					default: console.log('command undefined:'+command[0]);
+					default: console.log('command undefined:' + command[0]);
 				}
 			}
 		});
@@ -156,7 +156,7 @@ let f9pDriverProcess = null;		//process hangler for f9p driver
 
 	//commands comming from the http server side
 	process.on('message', msg => {
-		if(msg.includes('RESTART_SURVEY')) {
+		if (msg.includes('RESTART_SURVEY')) {
 			let restartSettings = msg.split(':');
 			//console.log(restartSettings[0], restartSettings[1])
 
@@ -180,7 +180,7 @@ let f9pDriverProcess = null;		//process hangler for f9p driver
 
 		// }
 	})
-})();
+};
 
 //GPS parser received data and processes it
 const gpsOutput = data => {
@@ -291,3 +291,5 @@ process.on('SIGUSR2', exitHandler.bind(null, { exit: true }));
 
 //catches uncaught exceptions
 process.on('uncaughtException', exitHandler.bind(null, { exit: true }));
+
+main();

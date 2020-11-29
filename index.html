@@ -3,51 +3,59 @@
 
 <head>
 	<title>GPS Base Station</title>
-	<style>
-		#map {
-			height: 500px;
-			width: 700px;
-		}
-	</style>
-</head>
-
-<body>
-	<div>
-		GPS Base Station
-		<hr />
-		Latitude: <input type="text" id="lat" value="">
-		<br />
-		Longitude: <input type="text" id="lon" value="">
-		<br />
-		Accuracy(m): <input type="text" id="accuracy" value=""> Current Minimum: <input type="text" id="accuracySetting" value=""> Default(3m)
-		<br />
-		Survey Time(s): <input type="text" id="surveyTime" value="">
-		<br />
-		Survey Valid: <input type="text" id="surveyValid" value="">
-		<br />
-		<Button id="restartSurveyBtn">Restart Survey</Button> New Accuracy: <input type="text" id="newAccuracySetting" value="">
-	</div>
-
-	<br><br>
-
-	<div>
-		Map
-		<hr />
-		<div id="map"></div>
-	</div>
-
-
 
 	<script src="/socket.io/socket.io.js"></script>
-	<script src="https://code.jquery.com/jquery-1.11.1.js"></script>
+
+	<!-- CSS -->
+	<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@4.5.3/dist/css/bootstrap.min.css"
+		integrity="sha384-TX8t27EcRE3e/ihU7zmQxVncDAy5uIKz4rEkgIXeMed4M0jlfIDPvg6uqKI2xXr2" crossorigin="anonymous">
+
+	<!-- jQuery and JS bundle w/ Popper.js -->
+	<!--<script src="https://code.jquery.com/jquery-3.5.1.slim.min.js"
+		integrity="sha384-DfXdz2htPH0lsSSs5nCTpuj/zy4C+OGpamoFVy38MVBnE+IbbVYUew+OrCXaRkfj"
+		crossorigin="anonymous"></script>-->
+		<script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
+	<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.5.3/dist/js/bootstrap.bundle.min.js"
+		integrity="sha384-ho+j7jyWK8fNQe+A12Hb8AhRq26LrZ/JpcUGGOn+Y7RsweNrtN/tE3MoK7ZeZDyx"
+		crossorigin="anonymous"></script>
+	<!--<script
+		src="https://maps.googleapis.com/maps/api/js?key=AIzaSyBvCDEAYYi6RI-_8C6kDrBfIyHans6KgYA&libraries=geometry"
+		async defer></script>-->
 
 	<script>
 
-		//initialize google map vars
-		var map = null
-		var marker = null
+		//Load script with callback
+		loadScript = (src, callback) => {
+			var script = document.createElement('script');
+			script.setAttribute('src', src);
+			script.addEventListener('load', callback);
+			document.head.appendChild(script);
+		}
 
-		$(() => {
+		//Hide/show telemetry data depending on receiver mode
+		setReceiverMode = (mode = "Disabled") => {
+			if(mode == "Disabled"){
+				$("#telemetryParams").hide('slow')
+				$("#telemetrySurveyParams").hide('slow');
+			}
+			else if(mode =="FixedMode"){
+				$("#telemetryParams").show('slow');
+				$("#telemetrySurveyParams").hide('hide');
+			}
+			else if(mode == "SurveyIn"){
+				$("#telemetryParams").show('slow');
+				$("#telemetrySurveyParams").show('slow');
+			}
+
+		}
+
+		$(document).ready(() => {
+			//initialize google map vars
+			var map = null
+			var marker = null
+			var blinkTimerInterval = null;
+
+			setReceiverMode();
 
 			//open socket for communication with backend
 			var socket = io()
@@ -57,10 +65,16 @@
 
 				if (msg.gps) {
 
+//console.log(msg)
+
 					if (msg.gps.lat && msg.gps.lon) {
 
-						$('#lat').val(msg.gps.lat)
-						$('#lon').val(msg.gps.lon)
+						$('#lat').text(msg.gps.lat)
+						$('#lon').text(msg.gps.lon)
+						$('#alt').text(msg.gps.alt)
+
+						//re-center map on a marker
+						map && map.setCenter({ lat: msg.gps.lat, lng: msg.gps.lon })
 
 						marker && marker.setPosition({
 							lat: msg.gps.lat,
@@ -69,46 +83,249 @@
 						//marker.setMap(map);
 					}
 
-					msg.gps.accuracy && $('#accuracy').val(msg.gps.accuracy)
-					msg.gps.survey_time && $('#surveyTime').val(msg.gps.survey_time)
-					msg.gps.survey_valid && $('#surveyValid').val(msg.gps.survey_valid)
-					msg.gps.accuracy_setting && $('#accuracySetting').val(msg.gps.accuracy_setting)
+					msg.gps.receiver_mode && $('#rmode').text(msg.gps.receiver_mode) && setReceiverMode(msg.gps.receiver_mode) && console.log(msg.gps.receiver_mode)
+					msg.gps.accuracy && $('#accuracy').text(msg.gps.accuracy)
+					msg.gps.survey_time && $('#surveyTime').text(msg.gps.survey_time)
+					msg.gps.survey_valid && $('#surveyValid').text(msg.gps.survey_valid) && $('#surveyValid').css('color', msg.gps.survey_valid === "True" ? 'green' : 'red')
+					msg.gps.set_accuracy && $('#accuracySetting').text(msg.gps.set_accuracy)
+					if(msg.gps.lastNtripSent){
+						
+						//status blink if last rtcm was sent less then 5s ago
+						if (new Date().getTime() < (msg.gps.lastNtripSent + 5000)) {
+							if (!blinkTimerInterval) {
+								blinkTimerInterval = setInterval(() => {
+									$("#lastNtripSentStatus").css('background-color') == 'rgb(255, 0, 0)' //red
+										? $("#lastNtripSentStatus").css("background-color", 'green')
+										: $("#lastNtripSentStatus").css("background-color", 'red')
+								}, 800)
+							}
+						} else {
+							blinkTimerInterval && clearInterval(blinkTimerInterval);
+							blinkTimerInterval = null;
+							$("#lastNtripSentStatus").css("background-color", 'red')
+						}
+					}
 				}
 			})
 
-			$('#restartSurveyBtn').click(()=>{
-				socket.emit("RESTART_SURVEY", $('#newAccuracySetting').val())
-			})
-		})
+			$('#restartSurveyBtn').click(() => {
 
-
-		//initialize google map
-		initMap = () => {
-
-			//create  a map
-			map = new google.maps.Map(document.getElementById('map'), {
-				center: { lat: 40.602826666666665, lng: -80.073335 },
-				zoom: 20
+				if ($('input[name=svCheck]:checked').val() == 'surveyChecked') {
+					socket.emit("RESTART_SURVEY", ($('#svAccuracyInput').val() || 3) + ':' + ($('#svTimeInput').val() || 60))
+				}
+				else {
+					socket.emit("RESTART_FIXED", ($('#svLatitudeInput').val() || 406028960) + ':' + ($('#svLongitudeInput').val() || -800735223) + ':' + ($('#svAltitudeInput').val() || 284000))
+				}
 			})
 
-			//create a marker
-			marker = new google.maps.Marker({
-				map: map,
-				title: 'GPS Mower!'
-			})
+			//initialize google map
+			initMap = () => {
 
-			//replace default icon for a marker
-			marker.setIcon(({
-				path: google.maps.SymbolPath.BACKWARD_CLOSED_ARROW,
-				scale: 6,
-				rotation: 0
-			}))
+				//create  a map
+				map = new google.maps.Map(document.getElementById('map'), {
+					center: { lat: 0, lng: 0 },
+					zoom: 20,
+					fullscreenControl: false,
+					streetViewControl: false,
+					mapTypeId: google.maps.MapTypeId.SATELLITE,
+					draggable: false,
+				})
 
-		}
+				//create a marker
+				marker = new google.maps.Marker({
+					map: map,
+					title: 'GPS Mower!'
+				})
+
+				//replace default icon for a marker
+				marker.setIcon(({
+					path: google.maps.SymbolPath.CIRCLE,
+					strokeColor: 'red',
+					fillOpacity: 0.2,
+					strokeWeight: 3,
+					scale: 6,
+					rotation: 0
+				}))
+			}
+
+			//load google api and initialize map
+			loadScript('https://maps.googleapis.com/maps/api/js?key=AIzaSyBvCDEAYYi6RI-_8C6kDrBfIyHans6KgYA&callback=initMap&libraries=geometry', initMap);
+
+
+			//Restart survey handler
+			$(".telemetry").click(() => $("#exampleModal").modal('toggle'))
+
+
+			$("#fixedChecked").click(() => { $('#surveyModeInputs').prop('disabled', true); $('#fixedModeInputs').prop('disabled', false) })
+			$("#surveyChecked").click(() => { $('#fixedModeInputs').prop('disabled', true); $('#surveyModeInputs').prop('disabled', false) })
+		});
 	</script>
-	<script
-		src="https://maps.googleapis.com/maps/api/js?key=AIzaSyBvCDEAYYi6RI-_8C6kDrBfIyHans6KgYA&callback=initMap&libraries=geometry"
-		async defer></script>
+
+
+
+	<style>
+		html,
+		body {
+			margin: 0;
+			padding: 0;
+			width: 100%;
+			height: 100%;
+		}
+	
+		.page-content {
+			position: relative;
+			width: 100%;
+			height: 100%;
+		}
+	
+		#map {
+			position: absolute;
+			top: 0;
+			left: 0;
+			height: 100%;
+			width: 100%;
+			z-index: 0;
+		}
+	
+		.telemetry {
+			position: absolute;
+			bottom: 10px;
+			left: 10px;
+			z-index: 99;
+	
+			color: chartreuse;
+			font-family: Verdana, Geneva, Tahoma, sans-serif;
+			font-size: 12px;
+			text-shadow: 1px 1px #000;
+		}
+	
+		.dot {
+			height: 10px;
+			width: 10px;
+			background-color: #bbb;
+			border-radius: 50%;
+			display: inline-block;
+		}
+	</style>
+
+
+</head>
+
+<body>
+
+
+	<div class="page-content">
+		<div class="telemetry">
+			<span style="font-weight: bold;">GPS / RTCM Base Station</span>
+			<br />
+			Receiver Mode: <span id='rmode'></span>
+			<div id="telemetryParams" style="display:none">
+				Latitude: <span id='lat'></span>
+				<br />
+				Longitude: <span id="lon"></span>
+				<br />
+				Altitude(m): <span id="alt"></span>
+				<div id="telemetrySurveyParams" style="display:none">
+					
+					Accuracy(m): <span id="accuracy"></span>
+					<br />
+					Current min accuracy: <span id="accuracySetting"></span> Default(3m)
+					<br />
+					Survey Time(s): <span id='surveyTime'></span>
+					<br />
+					Survey Valid: <span id="surveyValid"></span>
+				</div>
+				<br />
+				NTRIP Status: <span id="lastNtripSent"></span><span class="dot" id="lastNtripSentStatus"></span>
+			</div>
+		</div>
+	
+		<div>
+			Map
+			<hr />
+			<div id="map"></div>
+		</div>
+	</div>
+
+
+
+	<!-- Modal Restart Survey -->
+	<div class="modal fade" id="exampleModal" tabindex="-1">
+		<div class="modal-dialog">
+			<div class="modal-content">
+				<div class="modal-header">
+					<h5 class="modal-title" id="exampleModalLabel">Station Mode</h5>
+					<button type="button" class="close" data-dismiss="modal" aria-label="Close">
+						<span>&times;</span>
+					</button>
+				</div>
+				<div class="modal-body">
+					<div class="form-check">
+
+						<input class="form-check-input pt-4" name="svCheck" type="radio" value="surveyChecked" id="surveyChecked" checked>
+						<label class="form-check-label" for="surveyChecked">
+							<h5>Survey In</h5>
+						</label>
+
+						<fieldset id="surveyModeInputs">
+							<div class="input-group flex-nowrap mb-3">
+								<input type="number" class="form-control" id='svTimeInput' placeholder="Survey Time">
+								<div class="input-group-append">
+									<span class="input-group-text" id="addon-wrapping">s</span>
+								</div>
+							</div>
+
+							<div class="input-group flex-nowrap mb-3">
+								<input type="number" class="form-control" id='svAccuracyInput'
+									placeholder="Minimal Accuracy">
+								<div class="input-group-append">
+									<span class="input-group-text" id="addon-wrapping">m</span>
+								</div>
+							</div>
+						</fieldset>
+					</div>
+					<div class="form-check">
+
+						<input class="form-check-input" name="svCheck" type="radio" value='fixedChecked' id="fixedChecked">
+						<label class="form-check-label" for="fixedChecked">
+							<h5>Fixed Mode</h5>
+						</label>
+
+						<fieldset id='fixedModeInputs' disabled>
+							<div class="input-group flex-nowrap mb-3">
+								<input type="number" class="form-control" id='svLatitudeInput' placeholder="Latitude">
+								<div class="input-group-append">
+									<span class="input-group-text" id="addon-wrapping">deg</span>
+								</div>
+							</div>
+
+							<div class="input-group flex-nowrap mb-3">
+								<input type="number" class="form-control" id='svLongitudeInput' placeholder="Longitude">
+								<div class="input-group-append">
+									<span class="input-group-text" id="addon-wrapping">deg</span>
+								</div>
+							</div>
+
+							<div class="input-group flex-nowrap mb-3">
+								<input type="number" class="form-control" id='svAltitudeInput' placeholder="Altitude">
+								<div class="input-group-append">
+									<span class="input-group-text" id="addon-wrapping">m</span>
+								</div>
+							</div>
+						</fieldset>
+					</div>
+
+
+				</div>
+				<div class="modal-footer">
+					<button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
+					<button type="button" class="btn btn-primary" id="restartSurveyBtn">Restart</button>
+				</div>
+			</div>
+		</div>
+	</div>
+
+
 
 </body>
 

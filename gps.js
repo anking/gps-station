@@ -1,6 +1,6 @@
 //Imports
 const SerialPort = require('serialport');
-const GPS = require('gps')
+//const GPS = require('gps')
 const net = require('net');
 const fs = require('fs')
 const { exec, spawn } = require('child_process');
@@ -16,25 +16,36 @@ let gpsAccuracy = 3.000;		//in meters
 let gpsSurveyTime = 60;		//in seconds	
 
 //Create objects
-let gps = null;
+//let gpsParser = null;
 const nmeaDataSocketName = 'zed-f9p-nmea-data.sock';
 const rtcmDataSocketName = 'zed-f9p-rtcm-data.sock';
 const syncDataSocketName = 'zed-f9p-sync-data.sock';
 var processDataObject = {		//this object is being used to send data to the main process
 	lat: null,
 	lon: null,
+	alt: null,
 	survey_time: null,
 	accuracy: null,
 	survey_valid: false,
-	accuracy_setting: gpsAccuracy
+	receiver_mode: null,
+	set_accuracy: gpsAccuracy,
+	lastNtripSent: null
 };
 
-//local vars
+//Socket connections
 let serialDevice = null;
-let nmeaDataSocket = null;		//data socket for incoming raw nmea data
-let rtcmDataSocket = null;		//data socket for incoming raw rtcm data
-let syncDataSocket = null;		//data socket for internal data commands rather than rtcm. Packets of data in this socket are just plain strings separated by \r\n
-let f9pDriverProcess = null;		//process hangler for f9p driver
+let nmeaDataServer= null;		//data socket for incoming raw nmea data
+let rtcmDataServer = null;		//data socket for incoming raw rtcm data
+let syncDataServer = null;		//data socket for internal data commands rather than rtcm. Packets of data in this socket are just plain strings separated by \r\n
+//let nmeaDataSocket = null;	
+//let rtcmDataSocket = null;	
+let syncDataSocket = null;		//data socket reference needed for sending commands to the driver
+
+//F9p driver
+let f9pDriverProcess = null;		//process handler for f9p driver
+
+
+
 
 //Wrap everything in async function for proper await handling
 const main = async () => {
@@ -88,42 +99,46 @@ const main = async () => {
 
 	Socket for RTCM DATA
 	*/
-	rtcmDataSocket = net.createServer(socket => {
+	rtcmDataServer = net.createServer(socket => {
 		socket.on('data', c => {
 			//console.log(c.toString());
 		});
 	});
 
 	//Start listening on a changed for this socket
-	rtcmDataSocket.listen('/tmp/' + rtcmDataSocketName);
+	rtcmDataServer.listen('/tmp/' + rtcmDataSocketName);
 
 
 	/*
 	Open unix socket for interprocess communications(connection with .NET application that configures module)
 
 	Socket for NMEA data
-	*/
-	nmeaDataSocket = net.createServer(socket => {
-		try {
-			socket.on('data', c => gps && gps.updatePartial(c)); //send character to gps data parser
-		} catch (e) {
-			console.log("Caught GPS lib error: " + JSON.stringify(e));
-		}
-	});
 
-	//Start listening on a changed for this socket
-	nmeaDataSocket.listen('/tmp/' + nmeaDataSocketName);
+	//this socket is no longer needed since all naigation data will be passed thru UBX packets
+	*/
+	// nmeaDataServer = net.createServer(socket => {
+	// 	try {
+	// 		socket.on('data', c => gpsParser && gpsParser.updatePartial(c)); //send character to gps data parser
+	// 	} catch (e) {
+	// 		console.log("Caught GPS lib error: " + JSON.stringify(e));
+	// 	}
+	// });
+
+	// //Start listening on a changed for this socket
+	// nmeaDataServer.listen('/tmp/' + nmeaDataSocketName);
 
 	/*
 	Open unix socket for interprocess communications(connection with .NET application that configures module)
 
 	Socket for SYNC commands:
 	incoming: ACCURACY,SURVEY_VALID,SURVEY_TIME
-	outgoing:
+	outgoing: RESTART_SURVEY
 
 	commands separated by \r\n
 	*/
-	syncDataSocket = net.createServer(socket => {
+	syncDataServer = net.createServer(socket => {
+		//save socket globally
+		syncDataSocket = socket
 
 		//create interface for reading one line at a time
 		let rli = rl.createInterface(socket, socket);
@@ -131,13 +146,21 @@ const main = async () => {
 		//write line in a console for now
 		rli.on('line', line => {
 			//console.log(line)
+			
 			if (line.includes(':')) {
 				let command = line.split(':');
 
 				switch (command[0]) {
+					case 'SET_ACCURACY': processDataObject.set_accuracy = parseFloat(command[1]); break;
+					case 'RECEIVER_MODE': processDataObject.receiver_mode = command[1]; break;
 					case 'SURVEY_TIME': processDataObject.survey_time = command[1]; break;
 					case 'ACCURACY': processDataObject.accuracy = command[1]; break;
 					case 'SURVEY_VALID': processDataObject.survey_valid = command[1]; break;
+					case "LATITUDE": processDataObject.lat = parseFloat(command[1]); break;
+					case "LONGITUDE": processDataObject.lon = parseFloat(command[1]); break;
+					case "ALTITUDE": processDataObject.alt = parseInt(command[1]); break;
+					case "NTRIP_SENT": processDataObject.lastNtripSent = new Date().getTime(); break;
+					
 					default: console.log('command undefined:' + command[0]);
 				}
 			}
@@ -145,7 +168,7 @@ const main = async () => {
 	});
 
 	//Start listening on a changed for this socket
-	syncDataSocket.listen('/tmp/' + syncDataSocketName);
+	syncDataServer.listen('/tmp/' + syncDataSocketName);
 
 	//connect f9p driver .net core application
 	connectF9pDriver();
@@ -155,40 +178,37 @@ const main = async () => {
 	//gps.on('data', gpsOutput);
 
 	//commands comming from the http server side
-	process.on('message', msg => {
-		if (msg.includes('RESTART_SURVEY')) {
-			let restartSettings = msg.split(':');
+	process.on('message', command => {
+		if (command.includes('RESTART_SURVEY')) {
+			//let restartSettings = command.split(':');
 			//console.log(restartSettings[0], restartSettings[1])
 
-			//set new survey parameters and restart gps driver
-			gpsAccuracy = restartSettings[1] || 3;
+			//rend restart command to the GPS driver
+			if(syncDataSocket && !syncDataSocket.destroyed) {
+				console.log('Sending command to sync socket: ' + command)
 
-			//update accuracy in outgoing object
-			processDataObject.accuracy_setting = gpsAccuracy;
-
-			//restart driver
-			disconnectF9pDriver();
-
-			//wait a bit before restarting
-			setTimeout(connectF9pDriver, 250);
+				syncDataSocket.write(command, 'ASCII');
+			}
 		}
-		// if (msg === 'gps off') gps.off('data');
-		// if (msg === 'gps on') gps.on('data', gpsOutput)
-		// if (msg === 'rtcm') {
-		// 	console.log('rtcm signal received by gps module')
+		else if (command.includes('RESTART_FIXED')) {
 
+			//rend restart command to the GPS driver
+			if(syncDataSocket && !syncDataSocket.destroyed) {
+				console.log('Sending command to sync socket: ' + command)
 
-		// }
+				syncDataSocket.write(command, 'ASCII');
+			}
+		}
 	})
 };
 
 //GPS parser received data and processes it
-const gpsOutput = data => {
-	if (data.lat && data.lon) {
-		processDataObject.lat = data.lat;
-		processDataObject.lon = data.lon;
-	}
-}
+// const gpsOutput = data => {
+// 	if (data.lat && data.lon) {
+// 		processDataObject.lat = data.lat;
+// 		processDataObject.lon = data.lon;
+// 	}
+// }
 
 /*
 Start F9p module reader (.NET application)
@@ -204,15 +224,23 @@ const connectF9pDriver = () => {
 		'-ntrip-password', ntripPassword,
 		'-ntrip-port', ntripPort,
 		'-ntrip-mountpoint', ntripMountpoint,
-		'-rtcm-accuracy-req', gpsAccuracy,
+		'-rtcm-accuracy-req', processDataObject.set_accuracy,
 		'-rtcm-survey-time', gpsSurveyTime,
 	]
 
 	f9pDriverProcess = spawn(__dirname + '/f9p/Zedf9p', args);
 	//streamIn.pipe(f9pDriverProcess.stdin);
 
-	f9pDriverProcess.stdout.on('data', data => {
-		console.log(('F9p Driver: ' + data).trim());
+	// f9pDriverProcess.stdout.on('data', data => {
+	// 	console.log(('F9p Driver: ' + data).trim());
+	// });
+
+	//create interface for reading one line at a time
+	let rli = rl.createInterface(f9pDriverProcess.stdout);
+
+	//write line in a console for now
+	rli.on('line', line => {
+		console.log(('F9p Driver: ' + line).trim());
 	});
 
 	f9pDriverProcess.stderr.on('data', data => {
@@ -223,9 +251,16 @@ const connectF9pDriver = () => {
 		console.log('F9p Driver: child process exited with code ' + code);
 	});
 
+	//Restart GPS driver process if it exits
+	f9pDriverProcess.on('exit', code => {
+		console.log("Gps driver process exited with code " + code + ". Trying to restart...")
+
+		connectF9pDriver();
+	})
+
 	console.log('gps output hookup...')
-	gps = new GPS;
-	gps.on('data', gpsOutput)
+	//gpsParser = new GPS;
+	//gpsParser.on('data', gpsOutput)
 }
 
 /*
@@ -234,7 +269,7 @@ Disconnect f9p driver application
 const disconnectF9pDriver = () => {
 
 	//disconnect gps listener(otherwice it can cause an application exception that causes crash)
-	gps && gps.off() && (gps = null);
+	//gpsParser && gpsParser.off() && (gpsParser = null);
 
 	f9pDriverProcess && console.log(f9pDriverProcess.kill()) && (f9pDriverProcess = null)
 }
@@ -268,14 +303,14 @@ const exitHandler = (options, exitCode) => {
 	f9pDriverProcess && console.log(f9pDriverProcess.kill());
 
 	//close unix sockets
-	nmeaDataSocket && nmeaDataSocket.close();
-	rtcmDataSocket && rtcmDataSocket.close();
-	syncDataSocket && syncDataSocket.close();
+	nmeaDataServer && nmeaDataServer.close();
+	rtcmDataServer && rtcmDataServer.close();
+	syncDataServer && syncDataServer.close();
 
 	//remove socket handlers
 	unlinkSocketFiles()
 
-	if (exitCode || exitCode === 0) console.log('Exit Code: ' + exitCode);
+	if (exitCode || exitCode === 0) console.log('Exit Code(nodejs): ' + exitCode);
 	if (options.exit) process.exit();
 }
 

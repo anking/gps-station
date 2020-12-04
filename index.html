@@ -54,6 +54,7 @@
 			var map = null
 			var marker = null
 			var blinkTimerInterval = null;
+			var lastNtripSent;
 
 			setReceiverMode();
 
@@ -64,8 +65,6 @@
 				//console.log(msg);
 
 				if (msg.gps) {
-
-//console.log(msg)
 
 					if (msg.gps.lat && msg.gps.lon) {
 
@@ -88,10 +87,15 @@
 					msg.gps.survey_time && $('#surveyTime').text(msg.gps.survey_time)
 					msg.gps.survey_valid && $('#surveyValid').text(msg.gps.survey_valid) && $('#surveyValid').css('color', msg.gps.survey_valid === "True" ? 'green' : 'red')
 					msg.gps.set_accuracy && $('#accuracySetting').text(msg.gps.set_accuracy)
-					if(msg.gps.lastNtripSent){
-						
-						//status blink if last rtcm was sent less then 5s ago
-						if (new Date().getTime() < (msg.gps.lastNtripSent + 5000)) {
+					if(msg.gps.lastNtripSent) lastNtripSent = msg.gps.lastNtripSent;
+				}
+			})
+
+			//check NTRIP blinker periodically, start if active, stop if not
+			setInterval(()=>{
+
+				//status blink if last rtcm was sent less then 5s ago
+				if (new Date().getTime() < (lastNtripSent + 5000)) {
 							if (!blinkTimerInterval) {
 								blinkTimerInterval = setInterval(() => {
 									$("#lastNtripSentStatus").css('background-color') == 'rgb(255, 0, 0)' //red
@@ -104,10 +108,9 @@
 							blinkTimerInterval = null;
 							$("#lastNtripSentStatus").css("background-color", 'red')
 						}
-					}
-				}
-			})
+			}, 1000);
 
+			//Telemetry onclick handler
 			$('#restartSurveyBtn').click(() => {
 
 				if ($('input[name=svCheck]:checked').val() == 'surveyChecked') {
@@ -118,12 +121,17 @@
 				}
 			})
 
+			//Power off button
+			$('#powerOffButton').click(() => { socket.emit('POWER_OFF'); $("#exampleModal").modal('hide'); });
+			//Restart button
+			$('#restartButton').click(() => { socket.emit('REBOOT'); $("#exampleModal").modal('hide'); });
+
 			//initialize google map
 			initMap = () => {
 
 				//create  a map
 				map = new google.maps.Map(document.getElementById('map'), {
-					center: { lat: 0, lng: 0 },
+					center: { lat: 40.67242, lng: -74.04268 },
 					zoom: 20,
 					fullscreenControl: false,
 					streetViewControl: false,
@@ -314,6 +322,29 @@
 							</div>
 						</fieldset>
 					</div>
+
+					<hr />
+
+					<button type="button" class="btn btn-outline-primary" id='powerOffButton'>
+						Power Off
+						<svg width="1em" height="1em" viewBox="0 0 16 16" class="bi bi-power" fill="currentColor"
+							xmlns="http://www.w3.org/2000/svg">
+							<path fill-rule="evenodd"
+								d="M5.578 4.437a5 5 0 1 0 4.922.044l.5-.866a6 6 0 1 1-5.908-.053l.486.875z"></path>
+							<path fill-rule="evenodd" d="M7.5 8V1h1v7h-1z"></path>
+						</svg>
+					</button>
+
+					<button type="button" class="btn btn-outline-primary" id='restartButton'>
+						Restart
+						<svg width="1em" height="1em" viewBox="0 0 16 16" class="bi bi-arrow-clockwise"
+							fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+							<path fill-rule="evenodd"
+								d="M8 3a5 5 0 1 0 4.546 2.914.5.5 0 0 1 .908-.417A6 6 0 1 1 8 2v1z" />
+							<path
+								d="M8 4.466V.534a.25.25 0 0 1 .41-.192l2.36 1.966c.12.1.12.284 0 .384L8.41 4.658A.25.25 0 0 1 8 4.466z" />
+						</svg>
+					</button>
 
 
 				</div>

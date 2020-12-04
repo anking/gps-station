@@ -3,7 +3,7 @@ const express = require('express')
 const app = express() // this has to be here
 const server = require('http').createServer(app)
 const io = require('socket.io')(server)
-const { fork } = require('child_process')
+const { fork, exec } = require('child_process')
 const { Console } = require('console')
 
 //Create objects
@@ -48,6 +48,9 @@ const main = async () => {
 
 		socket.on('RESTART_SURVEY', params => gps && !gps.killed && gps.send('RESTART_SURVEY:' + params))
 		socket.on('RESTART_FIXED', params => gps && !gps.killed && gps.send('RESTART_FIXED:' + params))
+
+		socket.on('POWER_OFF', () => exec('shutdown now', (error, stdout, stderr) => console.log('shutting down....') ));
+		socket.on('REBOOT', () => exec('shutdown -r now', (error, stdout, stderr) => console.log('rebooting....') ));
 
 		//RTCM TEST
 		socket.on('rtcm', rtcmData => {

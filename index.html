@@ -22,6 +22,9 @@
 		src="https://maps.googleapis.com/maps/api/js?key=AIzaSyBvCDEAYYi6RI-_8C6kDrBfIyHans6KgYA&libraries=geometry"
 		async defer></script>-->
 
+		<!-- Cookie library -->
+		<script src="https://cdn.jsdelivr.net/npm/js-cookie@2/src/js.cookie.min.js"></script>
+
 	<script>
 
 		//Load script with callback
@@ -117,14 +120,30 @@
 					socket.emit("RESTART_SURVEY", ($('#svAccuracyInput').val() || 3) + ':' + ($('#svTimeInput').val() || 60))
 				}
 				else {
-					socket.emit("RESTART_FIXED", ($('#svLatitudeInput').val() || 406028960) + ':' + ($('#svLongitudeInput').val() || -800735223) + ':' + ($('#svAltitudeInput').val() || 284000))
+					$('#incorrectCoordsAlert').hide('fast')
+
+					let lat = $('#svLatitudeInput').val();
+					let lon = $('#svLongitudeInput').val();
+					let alt = $('#svAltitudeInput').val() + '000'; //convert to millimeters
+
+					if(-90 >= parseFloat(lat) >= 90 && -180 >= parseFloat(lon) >= 180) {
+						$('#incorrectCoordsAlert').show('fast')
+
+						return console.log('Incorrect coordinates')
+					}
+
+					socket.emit("RESTART_FIXED", lat + ':' + lon + ':' + alt)
+
+					Cookies.set('latitide', $('#svLatitudeInput').val(), {expires:365})
+					Cookies.set('longitude', $('#svLongitudeInput').val(), {expires:365})
+					Cookies.set('altitude', $('#svAltitudeInput').val(), {expires:365})
 				}
 			})
 
 			//Power off button
-			$('#powerOffButton').click(() => { socket.emit('POWER_OFF'); $("#exampleModal").modal('hide'); });
+			$('#powerOffButton').click(() => { socket.emit('POWER_OFF'); $("#telemetryModel").modal('hide'); });
 			//Restart button
-			$('#restartButton').click(() => { socket.emit('REBOOT'); $("#exampleModal").modal('hide'); });
+			$('#restartButton').click(() => { socket.emit('REBOOT'); $("#telemetryModel").modal('hide'); });
 
 			//initialize google map
 			initMap = () => {
@@ -161,7 +180,16 @@
 
 
 			//Restart survey handler
-			$(".telemetry").click(() => $("#exampleModal").modal('toggle'))
+			$(".telemetry").click(() => {
+				$('#svLatitudeInput').val(Cookies.get('latitide') || '');
+				$('#svLongitudeInput').val(Cookies.get('longitude') || '');
+				$('#svAltitudeInput').val(Cookies.get('altitude')) || '';
+
+				//hide error alerts
+				$('#incorrectCoordsAlert').hide('fast')
+
+				$("#telemetryModel").modal('toggle')
+			})
 
 
 			$("#fixedChecked").click(() => { $('#surveyModeInputs').prop('disabled', true); $('#fixedModeInputs').prop('disabled', false) })
@@ -258,11 +286,11 @@
 
 
 	<!-- Modal Restart Survey -->
-	<div class="modal fade" id="exampleModal" tabindex="-1">
+	<div class="modal fade" id="telemetryModel" tabindex="-1">
 		<div class="modal-dialog">
 			<div class="modal-content">
 				<div class="modal-header">
-					<h5 class="modal-title" id="exampleModalLabel">Station Mode</h5>
+					<h5 class="modal-title" id="telemetryModelLabel">Station Mode</h5>
 					<button type="button" class="close" data-dismiss="modal" aria-label="Close">
 						<span>&times;</span>
 					</button>
@@ -320,6 +348,10 @@
 									<span class="input-group-text" id="addon-wrapping">m</span>
 								</div>
 							</div>
+
+							<div class="alert alert-danger" role="alert" id='incorrectCoordsAlert'>
+								Incorrect Coordinates!
+							  </div>
 						</fieldset>
 					</div>
 

@@ -290,7 +290,7 @@
 		<div class="modal-dialog">
 			<div class="modal-content">
 				<div class="modal-header">
-					<h5 class="modal-title" id="telemetryModelLabel">Station Mode</h5>
+					<h5 class="modal-title">Station Mode</h5>
 					<button type="button" class="close" data-dismiss="modal" aria-label="Close">
 						<span>&times;</span>
 					</button>
@@ -355,34 +355,52 @@
 						</fieldset>
 					</div>
 
+					<div class="px-3">
+						<button type="button" class="btn btn-outline-primary w-100" id='restartSurveyBtn'>
+							Set receiver
+							<svg width="1em" height="1em" viewBox="0 0 16 16" class="bi bi-geo-fill" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+								<path fill-rule="evenodd" d="M4 4a4 4 0 1 1 4.5 3.969V13.5a.5.5 0 0 1-1 0V7.97A4 4 0 0 1 4 3.999zm2.493 8.574a.5.5 0 0 1-.411.575c-.712.118-1.28.295-1.655.493a1.319 1.319 0 0 0-.37.265.301.301 0 0 0-.057.09V14l.002.008a.147.147 0 0 0 .016.033.617.617 0 0 0 .145.15c.165.13.435.27.813.395.751.25 1.82.414 3.024.414s2.273-.163 3.024-.414c.378-.126.648-.265.813-.395a.619.619 0 0 0 .146-.15.148.148 0 0 0 .015-.033L12 14v-.004a.301.301 0 0 0-.057-.09 1.318 1.318 0 0 0-.37-.264c-.376-.198-.943-.375-1.655-.493a.5.5 0 1 1 .164-.986c.77.127 1.452.328 1.957.594C12.5 13 13 13.4 13 14c0 .426-.26.752-.544.977-.29.228-.68.413-1.116.558-.878.293-2.059.465-3.34.465-1.281 0-2.462-.172-3.34-.465-.436-.145-.826-.33-1.116-.558C3.26 14.752 3 14.426 3 14c0-.599.5-1 .961-1.243.505-.266 1.187-.467 1.957-.594a.5.5 0 0 1 .575.411z"/>
+							  </svg>
+						</button>
+					</div>
+
 					<hr />
 
-					<button type="button" class="btn btn-outline-primary" id='powerOffButton'>
-						Power Off
-						<svg width="1em" height="1em" viewBox="0 0 16 16" class="bi bi-power" fill="currentColor"
-							xmlns="http://www.w3.org/2000/svg">
-							<path fill-rule="evenodd"
-								d="M5.578 4.437a5 5 0 1 0 4.922.044l.5-.866a6 6 0 1 1-5.908-.053l.486.875z"></path>
-							<path fill-rule="evenodd" d="M7.5 8V1h1v7h-1z"></path>
-						</svg>
-					</button>
+					<h5 class="modal-title">Power</h5>
 
-					<button type="button" class="btn btn-outline-primary" id='restartButton'>
-						Restart
-						<svg width="1em" height="1em" viewBox="0 0 16 16" class="bi bi-arrow-clockwise"
-							fill="currentColor" xmlns="http://www.w3.org/2000/svg">
-							<path fill-rule="evenodd"
-								d="M8 3a5 5 0 1 0 4.546 2.914.5.5 0 0 1 .908-.417A6 6 0 1 1 8 2v1z" />
-							<path
-								d="M8 4.466V.534a.25.25 0 0 1 .41-.192l2.36 1.966c.12.1.12.284 0 .384L8.41 4.658A.25.25 0 0 1 8 4.466z" />
-						</svg>
-					</button>
+					<hr />
+
+					<div class="container">
+						<div class="row">
+							<div class="col-sm-6">
+								<button type="button" class="btn btn-outline-primary w-100" id='powerOffButton'>
+									Power Off
+									<svg width="1em" height="1em" viewBox="0 0 16 16" class="bi bi-power" fill="currentColor"
+										xmlns="http://www.w3.org/2000/svg">
+										<path fill-rule="evenodd"
+											d="M5.578 4.437a5 5 0 1 0 4.922.044l.5-.866a6 6 0 1 1-5.908-.053l.486.875z"></path>
+										<path fill-rule="evenodd" d="M7.5 8V1h1v7h-1z"></path>
+									</svg>
+								</button>
+							</div>
+		
+							<div class="col-sm-6">
+								<button type="button" class="btn btn-outline-primary w-100" id='restartButton'>
+									Restart
+									<svg width="1em" height="1em" viewBox="0 0 16 16" class="bi bi-arrow-clockwise"
+										fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+										<path fill-rule="evenodd"
+											d="M8 3a5 5 0 1 0 4.546 2.914.5.5 0 0 1 .908-.417A6 6 0 1 1 8 2v1z" />
+										<path
+											d="M8 4.466V.534a.25.25 0 0 1 .41-.192l2.36 1.966c.12.1.12.284 0 .384L8.41 4.658A.25.25 0 0 1 8 4.466z" />
+									</svg>
+								</button>
+							</div>
+						</div>
+					</div>
+					
 
 
-				</div>
-				<div class="modal-footer">
-					<button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
-					<button type="button" class="btn btn-primary" id="restartSurveyBtn">Restart</button>
 				</div>
 			</div>
 		</div>

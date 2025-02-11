@@ -1,0 +1,390 @@
+<!doctype html>
+<html>
+
+<head>
+    <title>GPS Base Station</title>
+
+    <script src="/socket.io/socket.io.js"></script>
+
+    <!-- CSS -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@4.5.3/dist/css/bootstrap.min.css"
+        integrity="sha384-TX8t27EcRE3e/ihU7zmQxVncDAy5uIKz4rEkgIXeMed4M0jlfIDPvg6uqKI2xXr2" crossorigin="anonymous">
+
+    <!-- jQuery and JS bundle w/ Popper.js -->
+    <!--<script src="https://code.jquery.com/jquery-3.5.1.slim.min.js"
+		integrity="sha384-DfXdz2htPH0lsSSs5nCTpuj/zy4C+OGpamoFVy38MVBnE+IbbVYUew+OrCXaRkfj"
+		crossorigin="anonymous"></script>-->
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@4.5.3/dist/js/bootstrap.bundle.min.js"
+        integrity="sha384-ho+j7jyWK8fNQe+A12Hb8AhRq26LrZ/JpcUGGOn+Y7RsweNrtN/tE3MoK7ZeZDyx"
+        crossorigin="anonymous"></script>
+
+    <!-- Cookie library -->
+    <script src="https://cdn.jsdelivr.net/npm/js-cookie@2/src/js.cookie.min.js"></script>
+
+    <script async defer src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCocUlXhB8nwGxPki0pf2riqXltcCjzpIA&callback=initMap&libraries=maps&libraries=marker&loading=async"></script>
+
+    <script>
+        function loadScript(src, callback) {
+            const script = document.createElement('script');
+            script.src = src;
+            script.onload = callback;
+            document.head.appendChild(script);
+        }
+
+        function setReceiverMode(mode = "Disabled") {
+            const telemetryParams = $("#telemetryParams");
+            const telemetrySurveyParams = $("#telemetrySurveyParams");
+
+            if (mode === "Disabled") {
+                telemetryParams.hide('slow');
+                telemetrySurveyParams.hide('slow');
+            } else if (mode === "FixedMode") {
+                telemetryParams.show('slow');
+                telemetrySurveyParams.hide();
+            } else if (mode === "SurveyIn") {
+                telemetryParams.show('slow');
+                telemetrySurveyParams.show('slow');
+            }
+        }
+
+        function initMap() {
+            map = new google.maps.Map(document.getElementById('map'), {
+                center: { lat: 40.67242, lng: -74.04268 },
+                zoom: 20,
+                fullscreenControl: false,
+                streetViewControl: false,
+                mapTypeId: 'satellite',
+                draggable: false,
+                mapId: "STATION_MAP",
+            });
+
+            // Create an AdvancedMarkerElement
+            const advancedMarker = new google.maps.marker.AdvancedMarkerElement({
+                map: map,
+                position: { lat: 40.67242, lng: -74.04268 },
+                title: 'GPS Mower!',
+            });
+
+            advancedMarker.element.setAttribute('icon', JSON.stringify({ // Crucial change!
+                path: google.maps.SymbolPath.CIRCLE,
+                strokeColor: 'red',
+                fillOpacity: 0.2,
+                strokeWeight: 3,
+                scale: 6
+            }));
+        }
+
+
+        $(document).ready(() => {
+            let map, marker, blinkTimerInterval, lastNtripSent;
+
+            setReceiverMode();
+            const socket = io();
+
+            socket.on('sensor data', msg => {
+                if (msg.gps) {
+                    const { lat, lon, alt, receiver_mode, accuracy, survey_time, survey_valid, set_accuracy, lastNtripSent: lastSent } = msg.gps;
+
+                    if (lat && lon) {
+                        $('#lat').text(lat);
+                        $('#lon').text(lon);
+                        $('#alt').text(alt);
+
+                        if (map) map.setCenter({ lat, lng: lon });
+                        if (marker) marker.setPosition({ lat, lng: lon });
+                    }
+
+                    if (receiver_mode) {
+                        $('#rmode').text(receiver_mode);
+                        setReceiverMode(receiver_mode);
+                    }
+                    if (accuracy) $('#accuracy').text(accuracy);
+                    if (survey_time) $('#surveyTime').text(survey_time);
+                    if (survey_valid) {
+                        $('#surveyValid').text(survey_valid).css('color', survey_valid === "True" ? 'green' : 'red');
+                    }
+                    if (set_accuracy) $('#accuracySetting').text(set_accuracy);
+                    if (lastSent) lastNtripSent = lastSent;
+                }
+            });
+
+            setInterval(() => {
+                const now = new Date().getTime();
+                const status = $("#lastNtripSentStatus");
+
+                if (now < (lastNtripSent + 5000)) {
+                    if (!blinkTimerInterval) {
+                        blinkTimerInterval = setInterval(() => {
+                            status.css("background-color", status.css("background-color") === 'rgb(255, 0, 0)' ? 'green' : 'red');
+                        }, 800);
+                    }
+                } else {
+                    clearInterval(blinkTimerInterval);
+                    blinkTimerInterval = null;
+                    status.css("background-color", 'red');
+                }
+            }, 1000);
+
+            $('#restartSurveyBtn').click(() => {
+                if ($('input[name=svCheck]:checked').val() === 'surveyChecked') {
+                    socket.emit("RESTART_SURVEY", `${$('#svAccuracyInput').val() || 3}:${$('#svTimeInput').val() || 60}`);
+                } else {
+                    $('#incorrectCoordsAlert').hide('fast');
+                    const lat = parseFloat($('#svLatitudeInput').val());
+                    const lon = parseFloat($('#svLongitudeInput').val());
+                    const alt = ($('#svAltitudeInput').val() || 0) + '000';
+
+                    if (lat < -90 || lat > 90 || lon < -180 || lon > 180) {
+                        $('#incorrectCoordsAlert').show('fast');
+                        return console.log('Incorrect coordinates');
+                    }
+
+                    socket.emit("RESTART_FIXED", `${lat}:${lon}:${alt}`);
+                    Cookies.set('latitude', lat, { expires: 365 });
+                    Cookies.set('longitude', lon, { expires: 365 });
+                    Cookies.set('altitude', alt, { expires: 365 });
+                }
+            });
+
+            $('#powerOffButton').click(() => socket.emit('POWER_OFF'));
+            $('#restartButton').click(() => socket.emit('REBOOT'));
+
+            $(".telemetry").click(() => {
+                $('#svLatitudeInput').val(Cookies.get('latitude') || '');
+                $('#svLongitudeInput').val(Cookies.get('longitude') || '');
+                $('#svAltitudeInput').val(Cookies.get('altitude') || '');
+                $('#incorrectCoordsAlert').hide('fast');
+                $("#telemetryModel").modal('toggle');
+            });
+
+            $("#fixedChecked").click(() => {
+                $('#surveyModeInputs').prop('disabled', true);
+                $('#fixedModeInputs').prop('disabled', false);
+            });
+            $("#surveyChecked").click(() => {
+                $('#fixedModeInputs').prop('disabled', true);
+                $('#surveyModeInputs').prop('disabled', false);
+            });
+        });
+    </script>
+
+
+
+    <style>
+        html,
+        body {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+        }
+
+        .page-content {
+            position: relative;
+            width: 100%;
+            height: 100%;
+        }
+
+        #map {
+            position: absolute;
+            top: 0;
+            left: 0;
+            height: 100%;
+            width: 100%;
+            z-index: 0;
+        }
+
+        .telemetry {
+            position: absolute;
+            bottom: 10px;
+            left: 10px;
+            z-index: 99;
+
+            color: chartreuse;
+            font-family: Verdana, Geneva, Tahoma, sans-serif;
+            font-size: 12px;
+            text-shadow: 1px 1px #000;
+        }
+
+        .dot {
+            height: 10px;
+            width: 10px;
+            background-color: #bbb;
+            border-radius: 50%;
+            display: inline-block;
+        }
+    </style>
+
+
+</head>
+
+<body>
+
+
+    <div class="page-content">
+        <div class="telemetry">
+            <span style="font-weight: bold;">GPS / RTCM Base Station</span>
+            <br />
+            Receiver Mode: <span id='rmode'></span>
+            <div id="telemetryParams" style="display:none">
+                Latitude: <span id='lat'></span>
+                <br />
+                Longitude: <span id="lon"></span>
+                <br />
+                Altitude(m): <span id="alt"></span>
+                <div id="telemetrySurveyParams" style="display:none">
+
+                    Accuracy(m): <span id="accuracy"></span>
+                    <br />
+                    Current min accuracy: <span id="accuracySetting"></span> Default(3m)
+                    <br />
+                    Survey Time(s): <span id='surveyTime'></span>
+                    <br />
+                    Survey Valid: <span id="surveyValid"></span>
+                </div>
+                <br />
+                NTRIP Status: <span id="lastNtripSent"></span><span class="dot" id="lastNtripSentStatus"></span>
+            </div>
+        </div>
+
+        <div>
+            Map
+            <hr />
+            <div id="map"></div>
+        </div>
+    </div>
+
+
+
+    <!-- Modal Restart Survey -->
+    <div class="modal fade" id="telemetryModel" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Station Mode</h5>
+                    <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                        <span>&times;</span>
+                    </button>
+                </div>
+                <div class="modal-body">
+                    <div class="form-check">
+
+                        <input class="form-check-input pt-4" name="svCheck" type="radio" value="surveyChecked"
+                            id="surveyChecked" checked>
+                        <label class="form-check-label" for="surveyChecked">
+                            <h5>Survey In</h5>
+                        </label>
+
+                        <fieldset id="surveyModeInputs">
+                            <div class="input-group flex-nowrap mb-3">
+                                <input type="number" class="form-control" id='svTimeInput' placeholder="Survey Time">
+                                <div class="input-group-append">
+                                    <span class="input-group-text" id="addon-wrapping">s</span>
+                                </div>
+                            </div>
+
+                            <div class="input-group flex-nowrap mb-3">
+                                <input type="number" class="form-control" id='svAccuracyInput'
+                                    placeholder="Minimal Accuracy">
+                                <div class="input-group-append">
+                                    <span class="input-group-text" id="addon-wrapping">m</span>
+                                </div>
+                            </div>
+                        </fieldset>
+                    </div>
+                    <div class="form-check">
+
+                        <input class="form-check-input" name="svCheck" type="radio" value='fixedChecked'
+                            id="fixedChecked">
+                        <label class="form-check-label" for="fixedChecked">
+                            <h5>Fixed Mode</h5>
+                        </label>
+
+                        <fieldset id='fixedModeInputs' disabled>
+                            <div class="input-group flex-nowrap mb-3">
+                                <input type="number" class="form-control" id='svLatitudeInput' placeholder="Latitude">
+                                <div class="input-group-append">
+                                    <span class="input-group-text" id="addon-wrapping">deg</span>
+                                </div>
+                            </div>
+
+                            <div class="input-group flex-nowrap mb-3">
+                                <input type="number" class="form-control" id='svLongitudeInput' placeholder="Longitude">
+                                <div class="input-group-append">
+                                    <span class="input-group-text" id="addon-wrapping">deg</span>
+                                </div>
+                            </div>
+
+                            <div class="input-group flex-nowrap mb-3">
+                                <input type="number" class="form-control" id='svAltitudeInput' placeholder="Altitude">
+                                <div class="input-group-append">
+                                    <span class="input-group-text" id="addon-wrapping">m</span>
+                                </div>
+                            </div>
+
+                            <div class="alert alert-danger" role="alert" id='incorrectCoordsAlert'>
+                                Incorrect Coordinates!
+                            </div>
+                        </fieldset>
+                    </div>
+
+                    <div class="px-3">
+                        <button type="button" class="btn btn-outline-primary w-100" id='restartSurveyBtn'>
+                            Set receiver
+                            <svg width="1em" height="1em" viewBox="0 0 16 16" class="bi bi-geo-fill" fill="currentColor"
+                                xmlns="http://www.w3.org/2000/svg">
+                                <path fill-rule="evenodd"
+                                    d="M4 4a4 4 0 1 1 4.5 3.969V13.5a.5.5 0 0 1-1 0V7.97A4 4 0 0 1 4 3.999zm2.493 8.574a.5.5 0 0 1-.411.575c-.712.118-1.28.295-1.655.493a1.319 1.319 0 0 0-.37.265.301.301 0 0 0-.057.09V14l.002.008a.147.147 0 0 0 .016.033.617.617 0 0 0 .145.15c.165.13.435.27.813.395.751.25 1.82.414 3.024.414s2.273-.163 3.024-.414c.378-.126.648-.265.813-.395a.619.619 0 0 0 .146-.15.148.148 0 0 0 .015-.033L12 14v-.004a.301.301 0 0 0-.057-.09 1.318 1.318 0 0 0-.37-.264c-.376-.198-.943-.375-1.655-.493a.5.5 0 1 1 .164-.986c.77.127 1.452.328 1.957.594C12.5 13 13 13.4 13 14c0 .426-.26.752-.544.977-.29.228-.68.413-1.116.558-.878.293-2.059.465-3.34.465-1.281 0-2.462-.172-3.34-.465-.436-.145-.826-.33-1.116-.558C3.26 14.752 3 14.426 3 14c0-.599.5-1 .961-1.243.505-.266 1.187-.467 1.957-.594a.5.5 0 0 1 .575.411z" />
+                            </svg>
+                        </button>
+                    </div>
+
+                    <hr />
+
+                    <h5 class="modal-title">Power</h5>
+
+                    <hr />
+
+                    <div class="container">
+                        <div class="row">
+                            <div class="col-sm-6">
+                                <button type="button" class="btn btn-outline-primary w-100" id='powerOffButton'>
+                                    Power Off
+                                    <svg width="1em" height="1em" viewBox="0 0 16 16" class="bi bi-power"
+                                        fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+                                        <path fill-rule="evenodd"
+                                            d="M5.578 4.437a5 5 0 1 0 4.922.044l.5-.866a6 6 0 1 1-5.908-.053l.486.875z">
+                                        </path>
+                                        <path fill-rule="evenodd" d="M7.5 8V1h1v7h-1z"></path>
+                                    </svg>
+                                </button>
+                            </div>
+
+                            <div class="col-sm-6">
+                                <button type="button" class="btn btn-outline-primary w-100" id='restartButton'>
+                                    Restart
+                                    <svg width="1em" height="1em" viewBox="0 0 16 16" class="bi bi-arrow-clockwise"
+                                        fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+                                        <path fill-rule="evenodd"
+                                            d="M8 3a5 5 0 1 0 4.546 2.914.5.5 0 0 1 .908-.417A6 6 0 1 1 8 2v1z" />
+                                        <path
+                                            d="M8 4.466V.534a.25.25 0 0 1 .41-.192l2.36 1.966c.12.1.12.284 0 .384L8.41 4.658A.25.25 0 0 1 8 4.466z" />
+                                    </svg>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+
+
+                </div>
+            </div>
+        </div>
+    </div>
+
+
+
+</body>
+
+</html>

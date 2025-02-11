@@ -1,11 +1,13 @@
 {
-  "name": "i2ctest",
-  "version": "1.0.0",
+  "name": "StationApp",
+  "version": "2.0.0",
   "description": "",
-  "main": "index.js",
+  "main": "index.ts",
   "scripts": {
     "tsc": "tsc",
-    "test": "tsc && node ./build/gps_test.js"
+    "build": "tsc && copyfiles -u 1 static/**/* build",
+    "start": "tsc && node ./build/index.js",
+    "test": "tsc && node ./build/index.js"
   },
   "keywords": [],
   "author": "",
@@ -13,12 +15,16 @@
   "dependencies": {
     "@types/node": "^14.14.7",
     "bitwise-buffer": "^1.0.2",
-    "express": "^4.17.1",
+    "express": "^4.21.2",
     "gps": "^0.6.0",
-    "lodash": "^4.17.20",
     "raspi": "^6.0.1",
-    "serialport": "^9.0.2",
-    "socket.io": "^2.3.0",
-    "typescript": "^4.0.5"
+    "serialport": "^13.0.0",
+    "socket.io": "^4.8.1",
+    "typescript": "^5.7.3",
+    "winston": "^3.17.0"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.0",
+    "copyfiles": "^2.4.1"
   }
 }

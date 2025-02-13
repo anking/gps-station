@@ -2,6 +2,10 @@ import * as winston from 'winston';
 import * as path from 'path';
 import * as fs from 'fs';
 
+// Check for --debug flag in command-line arguments
+const args = process.argv.slice(2);
+const isDebugMode = args.includes('--debug');
+
 // Define logs directory relative to where the app was started
 const logDirectory: string = path.join(process.cwd(), 'logs');
 
@@ -36,7 +40,7 @@ winston.addColors(customLevels.colors);
 
 // Create logger instance with file size limits
 const logger = winston.createLogger({
-    level: 'debug', // Log levels: debug, info, error
+    level: isDebugMode ? 'debug' : 'info', // Log levels: debug, info, error
     levels: customLevels.levels,
     format: winston.format.combine(        
         winston.format.timestamp({ format: 'HH:mm:ss' }), // Format time as H:M:S

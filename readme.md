@@ -14,15 +14,16 @@ node -v
 npm i
 
 - First you can try to run the web service manually by running
-node index.js
+npm start (this will build the app anp put artifacts into ./build)
 
-Web service will require f9p driver exec permissions to spawn driver process 
-(CHMOD 744) for /f9p/Zedf9p
+- Alternatively you can do
+npm test (if you already have the app built)
 
-Also will need permissions to remove socket file in /tmp, if unable you'll need to run it like so
-sudo node webserver.js
+Web service will require f9p driver exec permissions to spawn driver process
+The app should be able to do it automatically
+(CHMOD 744) for ./build/f9p/Zedf9p
 
-After start network http service will be running on 192.168.0.11:3000
+After start network http service will be running on [YOUR_IP / 192.168.0.11]:3000
 
 Create a sym link to the service:
 sudo ln -s /home/pi/gps-station/gpsstationweb.service /etc/systemd/system/gpsstationweb.service
@@ -40,10 +41,11 @@ journalctl -u gpsstationweb
 Check status
 sudo systemctl status gpsstationweb
 
+
+// To autostart browser with webserver visible
+sudo nano /etc/xdg/lxsession/LXDE-pi/autostart
+
+
 // F9P Device driver
 alternatively you can run the str2str to move the F9p drive data directly into the location service you need
 for this use location.service
-
-// if f9p driver is unable to connect to the interprocess sockets giving you the following issues
-F9p Driver: trying to connect to interpsrocess socket /tmp/zed-f9p-rtcm-data.sock...
-F9p Driver: Socket connection error: Cannot assign requested address /tmp/zed-f9p-nmea-data.sock

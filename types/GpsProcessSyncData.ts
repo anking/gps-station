@@ -1,4 +1,4 @@
-interface MainProcessSyncData {
+interface GpsProcessSyncData {
     lat?: number | null;
     lon?: number | null;
     alt?: number | null;
@@ -7,5 +7,6 @@ interface MainProcessSyncData {
     survey_valid?: boolean | null;
     receiver_mode?: ReceiverModeEnum | null;
     set_accuracy?: number | null;
-    lastNtripSent?: Date | null;
+    last_ntrip_sent?: Date | null;
+    errors?: any;
 }

@@ -11,9 +11,6 @@
         integrity="sha384-TX8t27EcRE3e/ihU7zmQxVncDAy5uIKz4rEkgIXeMed4M0jlfIDPvg6uqKI2xXr2" crossorigin="anonymous">
 
     <!-- jQuery and JS bundle w/ Popper.js -->
-    <!--<script src="https://code.jquery.com/jquery-3.5.1.slim.min.js"
-		integrity="sha384-DfXdz2htPH0lsSSs5nCTpuj/zy4C+OGpamoFVy38MVBnE+IbbVYUew+OrCXaRkfj"
-		crossorigin="anonymous"></script>-->
     <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@4.5.3/dist/js/bootstrap.bundle.min.js"
         integrity="sha384-ho+j7jyWK8fNQe+A12Hb8AhRq26LrZ/JpcUGGOn+Y7RsweNrtN/tE3MoK7ZeZDyx"
@@ -25,28 +22,36 @@
     <script async defer src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCocUlXhB8nwGxPki0pf2riqXltcCjzpIA&callback=initMap&libraries=maps&libraries=marker&loading=async"></script>
 
     <script>
+        const ReceiverMode = {
+            0: "Disabled",            
+            1: "SurveyIn",
+            2: "FixedMode",
+        };
+
+        let map, marker, blinkTimerInterval, lastNtripSent;
+
         function loadScript(src, callback) {
             const script = document.createElement('script');
             script.src = src;
             script.onload = callback;
             document.head.appendChild(script);
-        }
+        };
 
-        function setReceiverMode(mode = "Disabled") {
+        function setReceiverMode(mode = 0) {
             const telemetryParams = $("#telemetryParams");
             const telemetrySurveyParams = $("#telemetrySurveyParams");
 
-            if (mode === "Disabled") {
+            if (mode === 0) { // Disabled
                 telemetryParams.hide('slow');
                 telemetrySurveyParams.hide('slow');
-            } else if (mode === "FixedMode") {
+            } else if (mode === 2) { // Fixed Mode
                 telemetryParams.show('slow');
                 telemetrySurveyParams.hide();
-            } else if (mode === "SurveyIn") {
+            } else if (mode === 1) { // Survey Mode
                 telemetryParams.show('slow');
                 telemetrySurveyParams.show('slow');
             }
-        }
+        };
 
         function initMap() {
             map = new google.maps.Map(document.getElementById('map'), {
@@ -60,13 +65,13 @@
             });
 
             // Create an AdvancedMarkerElement
-            const advancedMarker = new google.maps.marker.AdvancedMarkerElement({
+            marker = new google.maps.marker.AdvancedMarkerElement({
                 map: map,
                 position: { lat: 40.67242, lng: -74.04268 },
                 title: 'GPS Mower!',
             });
 
-            advancedMarker.element.setAttribute('icon', JSON.stringify({ // Crucial change!
+            marker.element.setAttribute('icon', JSON.stringify({
                 path: google.maps.SymbolPath.CIRCLE,
                 strokeColor: 'red',
                 fillOpacity: 0.2,
@@ -76,15 +81,13 @@
         }
 
 
-        $(document).ready(() => {
-            let map, marker, blinkTimerInterval, lastNtripSent;
-
+        $(document).ready(() => {           
             setReceiverMode();
             const socket = io();
 
-            socket.on('sensor data', msg => {
+            socket.on('SENSOR_DATA', msg => {
                 if (msg.gps) {
-                    const { lat, lon, alt, receiver_mode, accuracy, survey_time, survey_valid, set_accuracy, lastNtripSent: lastSent } = msg.gps;
+                    const { lat, lon, alt, receiver_mode, accuracy, survey_time, survey_valid, set_accuracy, last_ntrip_sent } = msg.gps;
 
                     if (lat && lon) {
                         $('#lat').text(lat);
@@ -92,20 +95,21 @@
                         $('#alt').text(alt);
 
                         if (map) map.setCenter({ lat, lng: lon });
-                        if (marker) marker.setPosition({ lat, lng: lon });
+                        if (marker) marker.position = { lat, lng: lon };
                     }
 
-                    if (receiver_mode) {
-                        $('#rmode').text(receiver_mode);
+                    if (receiver_mode !== undefined) {
+                        const modeString = ReceiverMode[receiver_mode] || receiver_mode; // Convert enum to string if possible
+                        $('#receiverMode').text(modeString);
                         setReceiverMode(receiver_mode);
                     }
                     if (accuracy) $('#accuracy').text(accuracy);
                     if (survey_time) $('#surveyTime').text(survey_time);
                     if (survey_valid) {
-                        $('#surveyValid').text(survey_valid).css('color', survey_valid === "True" ? 'green' : 'red');
+                        $('#surveyValid').text(survey_valid).css('color', survey_valid === "true" ? 'green' : 'red');
                     }
                     if (set_accuracy) $('#accuracySetting').text(set_accuracy);
-                    if (lastSent) lastNtripSent = lastSent;
+                    if (last_ntrip_sent) lastNtripSent = new Date(last_ntrip_sent);
                 }
             });
 
@@ -113,7 +117,7 @@
                 const now = new Date().getTime();
                 const status = $("#lastNtripSentStatus");
 
-                if (now < (lastNtripSent + 5000)) {
+                if (lastNtripSent && now < (lastNtripSent.getTime() + 5000)) {
                     if (!blinkTimerInterval) {
                         blinkTimerInterval = setInterval(() => {
                             status.css("background-color", status.css("background-color") === 'rgb(255, 0, 0)' ? 'green' : 'red');
@@ -226,7 +230,7 @@
         <div class="telemetry">
             <span style="font-weight: bold;">GPS / RTCM Base Station</span>
             <br />
-            Receiver Mode: <span id='rmode'></span>
+            Receiver Mode: <span id='receiverMode'></span>
             <div id="telemetryParams" style="display:none">
                 Latitude: <span id='lat'></span>
                 <br />

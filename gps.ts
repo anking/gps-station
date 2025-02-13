@@ -5,6 +5,9 @@ import { SerialPort } from 'serialport';
 import { spawn } from 'child_process';
 import * as rl from 'readline';
 
+// Check for --debug flag in command-line arguments
+const args = process.argv.slice(2);
+const isDebugMode = args.includes('--debug');
 
 //SETTINGS
 const ntripServer = 'rtk2go.com';
@@ -21,11 +24,10 @@ const currentTimestamp = Date.now();
 const syncDataSocketName = socketPath + 'zed-f9p-sync-data-' + currentTimestamp + '.sock';
 
 // This object is being used to send data to the main process
-var mainProcessDataObject : MainProcessSyncData = {		//this object is being used to send data to the main process
+var mainProcessDataObject : GpsProcessSyncData = {
 	survey_valid: false,
 	set_accuracy: gpsAccuracy,
 };
-var f9pDataObject : F9pSyncData;
 
 //Socket connections
 let serialDevice: SerialDevice | undefined;
@@ -141,18 +143,18 @@ const main = async () => {
 const processSyncData = (syncData: F9pSyncData) => {
     logger.debug(`Received SyncData: ${JSON.stringify(syncData)}`);
 
-    // Example of how you might process the object
+    // Update only if the value is defined
     mainProcessDataObject = {
-		lat: syncData.Latitude,
-		lon: syncData.Longitude,
-		alt: syncData.Altitude,
-		accuracy: syncData.Accuracy,
-		set_accuracy: syncData.ModuleCurrentSetAccuracy,
-		receiver_mode: syncData.ReceiverMode,
-		survey_time: syncData.SurveyTime,
-		survey_valid: syncData.IsSurveyValid,
-		lastNtripSent: null
-        //errors: syncData.Errors,
+        lat: syncData.Latitude ?? mainProcessDataObject.lat,
+        lon: syncData.Longitude ?? mainProcessDataObject.lon,
+        alt: syncData.Altitude ?? mainProcessDataObject.alt,
+        accuracy: syncData.Accuracy ?? mainProcessDataObject.accuracy,
+        set_accuracy: syncData.ModuleCurrentSetAccuracy ?? mainProcessDataObject.set_accuracy,
+        receiver_mode: syncData.ReceiverMode ?? mainProcessDataObject.receiver_mode,
+        survey_time: syncData.SurveyTime ?? mainProcessDataObject.survey_time,
+        survey_valid: syncData.IsSurveyValid ?? mainProcessDataObject.survey_valid,
+        last_ntrip_sent: syncData.LastNtripSent ?? mainProcessDataObject.last_ntrip_sent,
+        errors: syncData.Errors ?? mainProcessDataObject.errors,
     };
 
     logger.debug(`Processed Data: ${JSON.stringify(mainProcessDataObject)}`);
@@ -202,9 +204,12 @@ const connectF9pDriver = () => {
 		'--rtcm-accuracy-req', mainProcessDataObject.set_accuracy?.toString() ?? '3',
 		'--rtcm-survey-time', gpsSurveyTime.toString(),
 		'--mode', 'Station',
-		'--sync-socket', syncDataSocketName,
-		'--debug'
+		'--sync-socket', syncDataSocketName
 	];
+
+	if (isDebugMode) {
+		args.push('--debug');
+	}
 
 	logger.debug('Running command: ' + command + ' ' + args.join(' '));
 

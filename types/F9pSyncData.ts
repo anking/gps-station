@@ -8,5 +8,6 @@ interface F9pSyncData {
     ModuleCurrentSetAccuracy?: number | null;
     ReceiverMode?: ReceiverModeEnum | null;
     SurveyTime?: number | null;
-    IsSurveyValid?: boolean | null;
+    IsSurveyValid?: boolean | null;    
+    LastNtripSent?: Date | null;
 }

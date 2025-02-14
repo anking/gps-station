@@ -87,7 +87,7 @@
 
             socket.on('SENSOR_DATA', msg => {
                 if (msg.gps) {
-                    const { lat, lon, alt, receiver_mode, accuracy, survey_time, survey_valid, set_accuracy, last_ntrip_sent } = msg.gps;
+                    const { lat, lon, alt, receiver_mode, accuracy, survey_time, survey_valid, set_accuracy, last_ntrip_sent, errors } = msg.gps;
 
                     if (lat && lon) {
                         $('#lat').text(lat);
@@ -105,11 +105,21 @@
                     }
                     if (accuracy) $('#accuracy').text(accuracy);
                     if (survey_time) $('#surveyTime').text(survey_time);
-                    if (survey_valid) {
-                        $('#surveyValid').text(survey_valid).css('color', survey_valid === "true" ? 'green' : 'red');
+                    if (survey_valid !== undefined) {
+                        $('#surveyValid').text(survey_valid).css('color', survey_valid ? 'green' : 'red');
                     }
                     if (set_accuracy) $('#accuracySetting').text(set_accuracy);
                     if (last_ntrip_sent) lastNtripSent = new Date(last_ntrip_sent);
+
+                    if (errors) {
+						if (errors.length) {
+							$('#errorOutput').removeClass("d-none").show('fast')
+							$('#errorMessage').html(errors.join('<br />'))
+						}
+						else {
+							$('#errorOutput').hide('fast')
+						}
+					}
                 }
             });
 
@@ -249,6 +259,8 @@
                 </div>
                 <br />
                 NTRIP Status: <span id="lastNtripSent"></span><span class="dot" id="lastNtripSentStatus"></span>
+                <br />
+                <span class="text-danger d-none" id='errorOutput'>Error: <span id="errorMessage"></span></span>
             </div>
         </div>
 

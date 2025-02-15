@@ -263,12 +263,12 @@ const unlinkSocketFiles = () => {
 const exitHandler = (options: { cleanup?: boolean; exit?: boolean }, exitCode?: number): void => {
     // If cleanup is requested, log the cleanup process (optional log)
     if (options.cleanup) {
-        console.info('Cleaning up...');
+        logger.info('Cleaning up...');
     }
 
     // Terminate child process if it exists
     if (f9pDriverProcess) {
-        console.info(f9pDriverProcess.kill());
+        logger.info(f9pDriverProcess.kill());
     }
 
     // Close sync data server if it exists
@@ -281,7 +281,7 @@ const exitHandler = (options: { cleanup?: boolean; exit?: boolean }, exitCode?: 
 
     // Log the exit code if available
     if (exitCode !== undefined) {
-        console.info(`Exit Code (nodejs): ${exitCode}`);
+        logger.info(`Exit Code (nodejs): ${exitCode}`);
     }
 
     // Exit the process if the "exit" flag is set

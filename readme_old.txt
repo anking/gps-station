@@ -110,9 +110,9 @@ journalctl -u location.service
 ## RTK2go Connection Confirmation
 RTK2go will confirm:
 ```
-MountPt: Wexford
-Password: 6n9c2TxqKwuc
-Location: Wexford, USA
+MountPt: ---
+Password: ---
+Location: ---
 ```
 Ensure that the mount point name matches exactly.
 

@@ -23,3 +23,23 @@ sudo ./LCD-hdmi
 I simply added a nocursor option as follows in the file (/etc/lightdm/lightdm.conf)
 
 xserver-command = X -nocursor
+
+// KNOWN ISSUES
+On raspberry Pi 3B+ display does not work after installing Debian Bookwarm
+this thread ad fix help:
+https://github.com/goodtft/LCD-show/issues/369#issuecomment-2116552991
+service (glamor-test) was adding a display driver for X. Since X is supposed to use the default driver, this tells it to use a different one, hence the problems you are having. Do the following on a RPi3B+:
+
+// To test
+sudo systemctl disable glamor-test.service
+sudo systemctl restart lightdm
+
+// To set
+sudo rm /usr/share/X11/xorg.conf.d/20-noglamor.conf
+sudo sed -e '/dtoverlay=vc4/ s/^#*/#/' -i /boot/firmware/config.txt
+sudo sed -i -e '/greeter-session=/ s/=.*/=pi-greeter/' /etc/lightdm/lightdm.conf
+sudo sed -i -e '/user-session=/ s/=.*/=LXDE-pi-x/' /etc/lightdm/lightdm.conf
+sudo sed -i -e '/autologin-session=/ s/=.*/=LXDE-pi-x/' /etc/lightdm/lightdm.conf
+sudo systemctl disable glamor-test.service
+
+It appears that after some time the screen still shuts off after a bit. I'll try using Bullseye release instead of Bookwarm 

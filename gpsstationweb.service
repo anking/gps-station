@@ -1,21 +1,17 @@
 [Unit]
-Description=RTCM Base Station Web Service
+Description=GPS Station Web Service
 After=network.target
-#StopWhenUnneeded=true
 
 [Service]
-ExecStart=/usr/bin/node /home/pi/gps-station/index.js
-Restart=always
-RestartSec=1 #restart after 1 second
-#User=nobody
-#User=root
-
-# Note RHEL/Fedora uses 'nobody', Debian/Ubuntu uses 'nogroup'
-#Group=nogroup  
-Environment=PATH=/usr/bin:/usr/local/bin:/sbin
-Environment=NODE_ENV=production
 WorkingDirectory=/home/pi/gps-station
-
+ExecStart=/usr/bin/npm start
+Restart=always
+User=pi
+Environment=PATH=/usr/bin:/usr/local/bin
+Environment=NODE_ENV=production
+StandardOutput=syslog
+StandardError=syslog
+SyslogIdentifier=gps-station
 
 [Install]
 WantedBy=multi-user.target

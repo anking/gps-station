@@ -6,17 +6,16 @@
   "scripts": {
     "tsc": "tsc",
     "build": "tsc && npm run copy-assets",
-    "start": "npm run build && npm run test",
     "copy-assets": "mkdir -p build/static build/f9p && copyfiles -u 1 static/**/* build/static && copyfiles -u 1 f9p/** build/f9p && chmod -R 744 build/f9p/Zedf9p",
-    "test": "node ./build/index.js",
+    "start": "node ./build/index.js",
     "debug": "node ./build/index.js --debug"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "@types/node": "^14.14.7",
     "bitwise-buffer": "^1.0.2",
+    "dotenv": "^16.4.7",
     "express": "^4.21.2",
     "gps": "^0.6.0",
     "raspi": "^6.0.1",
@@ -27,6 +26,7 @@
   },
   "devDependencies": {
     "@types/express": "^5.0.0",
+    "@types/node": "^22.13.4",
     "copyfiles": "^2.4.1"
   }
 }

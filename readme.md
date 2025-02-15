@@ -1,60 +1,119 @@
-// INSTALLING WEB SERVICE TO CAST LOCATION DATA
+# Installing Web Service to Cast Location Data
 
-// Pre-requisietes
-Raspberry Pi3 or above
+## Pre-requisites
 
-install node v.18 or later
-curl -sL https://deb.nodesource.com/setup_20.x | sudo -E bash -
-sudo apt-get install -y nodejs
-node -v
+- **Raspberry Pi 3 or above**
+- **Install Node/NPM v18 or later**
+  ```sh
+  sudo apt-get update
+  curl -sL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+  sudo apt-get install -y nodejs
+  node -v
+  npm -v
+  ```
+- **Install GIT (optional, if you want to copy build artifact onto RPi yourself)**
+  ```sh
+  sudo apt update
+  sudo apt install git -y
+  git --version
+  ```
 
-// Install GIT
+## Clone Repository
 
-// Clone repo on your Raspberry Pi
+Clone this repo to your Raspberry Pi:
+```sh
+git clone git@github.com:anking/gps-station.git
+```
 
-- Install dependencies
+## Compile Driver on a Separate Machine
+
+Clone & compile the driver repository and place the publish artifacts into `gps-station/f9p` directory (ensure correct architecture 32/64-bit).
+
+Instructions are available in the README of the driver repository:
+[zedf9p-server](https://github.com/anking/zedf9p-server)
+
+## Install Dependencies
+```sh
 npm i
+```
 
-- First you can try to run the web service manually by running
-npm start (this will build the app and put artifacts into ./build)
+## Build the Application
+```sh
+npm run build
+```
+This will build the app and put artifacts into `./build`
 
-- Alternatively you can do
-npm test (if you already have the app built)
+## Run the Web Service Manually
+```sh
+npm start
+```
 
-Web service will require f9p driver exec permissions to spawn driver process
-The app should be able to do it automatically
-(CHMOD 744) for ./build/f9p/Zedf9p
+The web service will require `f9p` driver execution permissions to spawn the driver process. Permissions should be assigned automatically, but if needed, set them manually:
+```sh
+chmod 744 ./build/f9p/Zedf9p
+```
 
-After start network http service will be running on [YOUR_IP / 192.168.0.11]:3000
+After starting, the network HTTP service will be available at:
+```
+[YOUR_IP / 192.168.0.11]:3000
+```
 
-// TO RUN AS SYSTEM SERVICE
-// Create a sym link to the service:
+---
+
+## Running as a System Service
+
+### Create a Symbolic Link for the Service
+```sh
 sudo ln -s /home/pi/gps-station/gpsstationweb.service /etc/systemd/system/gpsstationweb.service
+```
 
-// Reloas system daemons
+### Reload System Daemons
+```sh
 sudo systemctl daemon-reload
+```
 
-Enable the service
+### Enable the Service
+```sh
 sudo systemctl enable gpsstationweb
+```
 
-Manual control
+### Manual Control
+```sh
 sudo systemctl start gpsstationweb
 sudo systemctl stop gpsstationweb
+```
 
-Check Logs
+### Check Logs
+```sh
 journalctl -u gpsstationweb
+```
 
-Check status
+### Check Status
+```sh
 sudo systemctl status gpsstationweb
+```
 
+---
 
-// To autostart browser with webserver visible
+## Auto-start Browser with Web Server Visible
+
+Edit the autostart file:
+```sh
 sudo nano /etc/xdg/lxsession/LXDE-pi/autostart
-// Add the following line
+```
+
+Add the following line:
+```sh
 @chromium-browser --kiosk --disable-infobars --disable-session-crashed-bubble --noerrdialogs http://localhost:3000
+```
 
+---
 
-// F9P Device driver
-alternatively you can run the str2str to move the F9p drive data directly into the location service you need
-for this use location.service
-more info in readme_old.txt
+## Using Raspberry Pi 3.5" Screen
+Refer to the [Touchscreen README](./touchscreen/README.md)
+
+---
+
+## F9P Device Driver
+Alternatively, you can use `str2str` to transfer the F9P driver data directly to the location service.
+For this, use `location.service`. More info is available in `readme_old.txt`.

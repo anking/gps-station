@@ -4,21 +4,13 @@ import * as net from 'net';
 import { SerialPort } from 'serialport';
 import { spawn } from 'child_process';
 import * as rl from 'readline';
+import { config } from './config';
 
 // Check for --debug flag in command-line arguments
 const args = process.argv.slice(2);
 const isDebugMode = args.includes('--debug');
 
-//SETTINGS
-const ntripServer = 'rtk2go.com';
-const ntripPassword = 'arhG4oKZ';
-const ntripMountpoint = 'SmirnovRTK';
-const ntripPort = 2101;
-let gpsAccuracy: number = 3.000;		//in meters
-let gpsSurveyTime: number = 60;		//in seconds	
-
 //Create objects
-//let gpsParser = null;
 const socketPath = '/tmp/';
 const currentTimestamp = Date.now();
 const syncDataSocketName = socketPath + 'zed-f9p-sync-data-' + currentTimestamp + '.sock';
@@ -26,7 +18,7 @@ const syncDataSocketName = socketPath + 'zed-f9p-sync-data-' + currentTimestamp 
 // This object is being used to send data to the main process
 var mainProcessDataObject : GpsProcessSyncData = {
 	survey_valid: false,
-	set_accuracy: gpsAccuracy,
+	set_accuracy: config.gpsAccuracy,
 };
 
 //Socket connections
@@ -36,9 +28,6 @@ let syncDataServer: net.Server;
 
 //F9p driver
 let f9pDriverProcess: any = null;		//process handler for f9p driver
-
-
-
 
 //Wrap everything in async function for proper await handling
 const main = async () => {
@@ -197,12 +186,12 @@ const connectF9pDriver = () => {
 	const command = __dirname + '/f9p/Zedf9p';
 	const args: string[] = [
 		'--com-port', serialDevice?.path ?? '',
-		'--ntrip-server', ntripServer,
-		'--ntrip-port', ntripPort.toString(),
-		'--ntrip-mountpoint', ntripMountpoint,
-		'--ntrip-password', ntripPassword,
+		'--ntrip-server', config.ntripServer,
+		'--ntrip-port', config.ntripPort.toString(),
+		'--ntrip-mountpoint', config.ntripMountpoint,
+		'--ntrip-password', config.ntripPassword,
 		'--rtcm-accuracy-req', mainProcessDataObject.set_accuracy?.toString() ?? '3',
-		'--rtcm-survey-time', gpsSurveyTime.toString(),
+		'--rtcm-survey-time', config.gpsSurveyTime.toString(),
 		'--mode', 'Station',
 		'--sync-socket', syncDataSocketName
 	];

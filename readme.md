@@ -1,5 +1,25 @@
 # Installing Web Service to Cast Location Data
 
+## Installation Guide
+
+To automate the setup process, follow these steps:
+
+1. **Download the `install.sh` script** from the repository.
+2. **Move the script to the `/home/pi` directory**:
+   ```sh
+   mv install.sh /home/pi/
+   ```
+3. **Grant execution permissions**:
+   ```sh
+   chmod +x /home/pi/install.sh
+   ```
+4. **Run the installation script**:
+   ```sh
+   /home/pi/install.sh
+   ```
+
+This will set up everything automatically for you. But if you prefer to do things manually or automatic install doesnt work follow steps below.
+
 ## Pre-requisites
 
 - **Raspberry Pi 3 or above**
@@ -25,11 +45,12 @@ Clone this repo to your Raspberry Pi:
 git clone git@github.com:anking/gps-station.git
 ```
 
-## Compile Driver on a Separate Machine
+## Compile Driver for Ublox Zed-F9p and copy to gps-station
 
-Clone & compile the driver repository and place the publish artifacts into `gps-station/f9p` directory (ensure correct architecture 32/64-bit).
+Pre compiled .net artifacts can be found [here](https://github.com/anking/zedf9p-server/releases/latest/)
+Place the artifacts into `gps-station/f9p` directory (ensure correct architecture 32/64-bit).
 
-Instructions are available in the README of the driver repository:
+Instructions on how to compile yoursel are available in the README of the driver repository:
 [zedf9p-server](https://github.com/anking/zedf9p-server)
 
 ## Install Dependencies

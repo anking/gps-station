@@ -1,4 +1,12 @@
-# Installing Web Service to Cast Location Data
+# RTK GPS Base Station for Raspberry Pi
+
+This application uses a **Ublox ZED-F9P RTK GPS receiver** to broadcast **RTCM correction data** to an **NTRIP caster** (such as **RTK2GO** or any SNIP service). Designed to run on a **Raspberry Pi**, it enables high-precision GPS corrections for rover devices.
+
+## Features
+- **NTRIP Server**: Streams GPS correction data to an NTRIP caster.
+- **Web UI**: Displays real-time location on a map and receiver status.
+- **Mode Control**: Allows switching between **Survey** and **Fixed** modes.
+- **USB Connection**: Uses a recompiled **Ublox .NET driver** to communicate with the ZED-F9P.
 
 ## Installation Guide
 
@@ -22,6 +30,7 @@ To automate the setup process, follow these steps:
    ```
 
 This will set up everything automatically for you. But if you prefer to do things manually or automatic install doesnt work follow steps below.
+You will need to put the correct credentials for the RTK Caster service inside the `.env` file. A [sample file](./.env.sample) is included.
 
 ## Pre-requisites
 

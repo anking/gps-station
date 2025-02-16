@@ -143,7 +143,7 @@ Add the following line:
 ---
 
 ## Using Raspberry Pi 3.5" Screen
-Refer to the [Touchscreen README](./touchscreen/README.md)
+Refer to the [Touchscreen README](./touchscreen/readme.md)
 
 ---
 

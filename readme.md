@@ -30,7 +30,7 @@ To automate the setup process, follow these steps:
    ```
 
 This will set up everything automatically for you. But if you prefer to do things manually or automatic install doesnt work follow steps below.
-You will need to put the correct credentials for the RTK Caster service inside the `.env` file. A [sample file](./.env.sample) is included.
+You will need to put the correct credentials for the RTK Caster service inside the `.env` file. A [sample file](./.env.example) is included.
 
 ## Pre-requisites
 

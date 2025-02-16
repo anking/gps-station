@@ -4,7 +4,10 @@
 
 To automate the setup process, follow these steps:
 
-1. **Download the `install.sh` script** from the repository.
+1. **Download the `install.sh` script** from the repository:
+   ```sh
+   wget https://raw.githubusercontent.com/anking/gps-station/main/install.sh -O install.sh
+   ```
 2. **Move the script to the `/home/pi` directory**:
    ```sh
    mv install.sh /home/pi/

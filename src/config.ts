@@ -19,4 +19,5 @@ export const config = {
     ntripMountpoint: getEnvVariable('NTRIP_MOUNTPOINT', 'xxxx-not-set'),
     gpsAccuracy: getEnvVariable('GPS_ACCURACY', 3.000), // in meters
     gpsSurveyTime: getEnvVariable('GPS_SURVEY_TIME', 60), // in seconds
+    webServerPort: getEnvVariable('WEB_SERVER_PORT', 3000), // in seconds
 };

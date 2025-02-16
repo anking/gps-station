@@ -234,7 +234,7 @@ const connectF9pDriver = () => {
 Disconnect f9p driver application
 */
 const disconnectF9pDriver = () => {
-	f9pDriverProcess && logger.info(f9pDriverProcess.kill()) && (f9pDriverProcess = null)
+	f9pDriverProcess && logger.info(`F9p child process terminated: ${f9pDriverProcess.kill()}`) && (f9pDriverProcess = null)
 }
 
 // Update main process
@@ -256,9 +256,7 @@ const exitHandler = (options: { cleanup?: boolean; exit?: boolean }, exitCode?: 
     }
 
     // Terminate child process if it exists
-    if (f9pDriverProcess) {
-        logger.info(f9pDriverProcess.kill());
-    }
+    disconnectF9pDriver();
 
     // Close sync data server if it exists
     if (syncDataServer) {

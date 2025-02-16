@@ -23,13 +23,15 @@ const customLevels = {
         error: 1,
         warn: 2,
         f9p: 3,  // Custom level for f9p drive
-        info: 4,
-        debug: 5
+        chromium: 4,  // Custom level for f9p drive
+        info: 5,
+        debug: 6
     },
     colors: {
-        f9p: 'cyan',
         error: 'red',
         warn: 'yellow',
+        f9p: 'cyan',
+        chromium: 'blue',
         info: 'green',
         debug: 'magenta'
     }

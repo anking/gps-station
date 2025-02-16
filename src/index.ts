@@ -1,35 +1,48 @@
 import express from 'express';
 import { createServer } from 'http';
 import { Server as SocketServer } from 'socket.io';
-import { fork, exec, ChildProcess } from 'child_process';
+import { fork, exec, ChildProcess, spawn } from 'child_process';
 import logger from './utils/logger';
+import { config } from './config';
 
 let gpsProcess: ChildProcess | null = null;
 let gpsData: GpsProcessSyncData;
 let lastGpsUpdate = 0;
 let gpsUpdateScheduled = false;
-
-// Wrap everything in async function for proper await handling
-const main = async (): Promise<void> => {
-  // Output logger level
-  logger.info(`LOG LEVEL: ${logger.level}`);
-
-  // Connect gps process
-  createGpsProcess();
-
-  // Setup Express
-  setupWebServer();
-
-  // If process forcibly terminated - clear out
-  process.on('SIGTERM', () => {
-    server.close();
-  });
-
-};
+const webServerUrl = `http://localhost:${config.webServerPort}`;
+let browserProcess: any = null;
 
 const expressServer = express();
 const server = createServer(expressServer);
 const webServerSocket = new SocketServer(server);  // Instantiate Socket.IO server
+
+// Wrap everything in async function for proper await handling
+const main = async (): Promise<void> => {
+  // Output logger level
+  logger.info(`Log level: ${logger.level}`);
+
+  // Connect gps process
+  createGpsProcess();
+
+  // Start browser on RPi
+  startBrowser();
+
+  // Setup Express
+  setupWebServer();
+
+  process.on('SIGINT', () => {
+    logger.info('Shutting down the server...');
+    shutdownBrowser();
+    process.exit();
+  });
+
+  process.on('SIGTERM', () => {
+    logger.info('Shutting down the server...');
+    server.close();
+    shutdownBrowser();
+    process.exit();
+  });
+};
 
 const setupWebServer = (): void => {
   expressServer.get('/', (_, res) => {
@@ -41,8 +54,8 @@ const setupWebServer = (): void => {
   });
 
   // Starting listening for server
-  server.listen(3000, () => {
-    logger.info('listening on *:3000');
+  server.listen(config.webServerPort, () => {
+    logger.info(`listening on *:${config.webServerPort}`);
   });
 
   // Websocket connection made
@@ -64,14 +77,61 @@ const setupWebServer = (): void => {
     webSocket.on('RESTART_SURVEY', (params: string) => gpsProcess && !gpsProcess.killed && gpsProcess.send('RESTART_SURVEY:' + params));
     webSocket.on('RESTART_FIXED', (params: string) => gpsProcess && !gpsProcess.killed && gpsProcess.send('RESTART_FIXED:' + params));
 
-    webSocket.on('POWER_OFF', () => exec('shutdown now', (error, stdout, stderr) => logger.info('shutting down....')));
-    webSocket.on('REBOOT', () => exec('shutdown -r now', (error, stdout, stderr) => logger.info('rebooting....')));
+    webSocket.on('POWER_OFF', () => handleSystemCommand('sudo shutdown now', 'Shutting down'));
+    webSocket.on('REBOOT', () => handleSystemCommand('sudo shutdown -r now', 'Rebooting'));
 
     // RTCM TEST
     webSocket.on('rtcm', (rtcmData: string) => {
       logger.info('RTCM: ' + rtcmData);
     });
   });
+};
+
+// Start Chromium in kiosk mode when the server starts
+const startBrowser = () => {
+  logger.chromium("Starting up browser...");
+
+  // Set the DISPLAY environment variable to :0
+  process.env.DISPLAY = ":0";
+
+  browserProcess = spawn("chromium-browser", [
+    "--no-sandbox",
+    "--disable-gpu",
+    "--kiosk",
+    "--disable-infobars",
+    "--disable-session-crashed-bubble",
+    "--noerrdialogs",
+    webServerUrl
+  ], {
+    detached: false,  // Don't detach so that we can manage the process
+    stdio: ["ignore", "pipe", "pipe"]  // Capture stdout and stderr
+  });
+
+  browserProcess.stdout.on('data', (data: Buffer) => {
+    // Log stdout with your desired formatting (e.g., prepend with [STDOUT])
+    logger.chromium(data.toString());
+  });
+
+  browserProcess.stderr.on('data', (data: Buffer) => {
+    // Log stderr with your desired formatting (e.g., prepend with [STDERR])
+    logger.error(`[CR] ${data.toString()}`);
+  });
+
+  browserProcess.on('error', (err: any) => {
+    logger.error("Failed to start browser:", err);
+  });
+
+  browserProcess.on('exit', (code: number) => {
+    logger.error(`Chromium exited with code: ${code}`);
+  });
+};
+
+// Gracefully shut down and close the browser
+const shutdownBrowser = () => {
+  if (browserProcess) {
+    logger.chromium("Shutting down the browser...");
+    browserProcess.kill();  // Send termination signal to the browser process
+  }
 };
 
 const createGpsProcess = (): void => {
@@ -110,6 +170,21 @@ const sendGpsUpdate = () => {
   webServerSocket.emit('SENSOR_DATA', { gps: gpsData });
   lastGpsUpdate = Date.now();
   gpsUpdateScheduled = false;
+};
+
+// Helper function to handle system commands
+const handleSystemCommand = (command: string, action: string) => {
+  exec(command, (error, stdout, stderr) => {
+    if (error) {
+      logger.error(`Error during ${action}: ${error.message}`);
+      return;
+    }
+    if (stderr) {
+      logger.error(`stderr during ${action}: ${stderr}`);
+      return;
+    }
+    logger.info(`${action} completed successfully: ${stdout}`);
+  });
 };
 
 main();

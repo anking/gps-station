@@ -88,6 +88,10 @@ sudo systemctl daemon-reload
 echo "Enabling the service..."
 sudo systemctl enable gpsstationweb
 
+# Remind about .env file with creds
+echo "Make sure to create the .env file. A sample configuration is available in .env.example."
+read -p "Type 'y' to confirm that you understand you must create a .env file in the gps-station directory with your credentials: " env_ack
+
 # Ask if the user wants to start the service automatically
 read -p "Do you want to start the service now? (y/n): " start_service
 if [ "$start_service" == "y" ]; then

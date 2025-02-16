@@ -19,11 +19,32 @@
     <!-- Cookie library -->
     <script src="https://cdn.jsdelivr.net/npm/js-cookie@2/src/js.cookie.min.js"></script>
 
-    <script async defer src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCocUlXhB8nwGxPki0pf2riqXltcCjzpIA&callback=initMap&libraries=maps&libraries=marker&loading=async"></script>
+    <script>
+        function loadGoogleMaps(apiKey) {
+            if (!apiKey) {
+                console.error("API Key is missing!");
+                return;
+            }
+
+            const script = document.createElement("script");
+            script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&callback=initMap&libraries=maps,marker&loading=async`;
+            script.async = true;
+            script.defer = true;
+
+            document.head.appendChild(script);
+        }
+
+        fetch('/config')
+            .then(response => response.json())
+            .then(config => {
+                loadGoogleMaps(config.googleMapsApiKey);
+            })
+            .catch(error => console.error('Error loading API key:', error));
+    </script>
 
     <script>
         const ReceiverMode = {
-            0: "Disabled",            
+            0: "Disabled",
             1: "SurveyIn",
             2: "FixedMode",
         };
@@ -81,7 +102,7 @@
         }
 
 
-        $(document).ready(() => {           
+        $(document).ready(() => {
             setReceiverMode();
             const socket = io();
 
@@ -112,14 +133,14 @@
                     if (last_ntrip_sent) lastNtripSent = new Date(last_ntrip_sent);
 
                     if (errors) {
-						if (errors.length) {
-							$('#errorOutput').removeClass("d-none").show('fast')
-							$('#errorMessage').html(errors.join('<br />'))
-						}
-						else {
-							$('#errorOutput').hide('fast')
-						}
-					}
+                        if (errors.length) {
+                            $('#errorOutput').removeClass("d-none").show('fast')
+                            $('#errorMessage').html(errors.join('<br />'))
+                        }
+                        else {
+                            $('#errorOutput').hide('fast')
+                        }
+                    }
                 }
             });
 

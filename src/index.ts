@@ -53,6 +53,11 @@ const setupWebServer = (): void => {
     res.sendFile(__dirname + '/static/chat.html');
   });
 
+  // API route to expose environment variable
+  expressServer.get('/config', (_, res) => {
+    res.json({ googleMapsApiKey: config.googleMapsApiKey });
+  });
+
   // Starting listening for server
   server.listen(config.webServerPort, () => {
     logger.info(`listening on *:${config.webServerPort}`);

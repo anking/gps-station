@@ -147,6 +147,7 @@ Refer to the [Touchscreen README](./touchscreen/readme.md)
 
 ---
 
-## F9P Device Driver
+## F9P Device Driver Bypass / Using Str2Str
 Alternatively, you can use `str2str` to transfer the F9P driver data directly to the location service.
-For this, use `location.service`. More info is available in `readme_old.txt`.
+This service will connect directly to the F9p device(serial port) and merely transfer all the data it spits out to the SNIP caster server.
+For this, use `location-streamer.service`. More info is available in `str2str/readme_old.txt`.

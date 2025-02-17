@@ -116,14 +116,3 @@ Location: ---
 ```
 Ensure that the mount point name matches exactly.
 
-## Installing Web Service
-```sh
-sudo ln -s /home/pi/gps-station/gpsstationweb.service /etc/systemd/system/gpsstationweb.service
-sudo systemctl enable gpsstationweb
-```
-The network service will be available at `192.168.0.126:3000`.
-
----
-
-This guide provides a step-by-step setup for casting a ZED-F9P base station's location data to a public caster using RTK2go.
-

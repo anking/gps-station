@@ -2,6 +2,7 @@
 #pragma once
 
 #include <stdbool.h>
+#include <stdint.h>
 
 #include "base_station.h"
 
@@ -11,6 +12,15 @@ typedef struct {
     char ui_password[65];
     base_caster_settings_t caster;
     base_mode_t mode;
+
+    // The monitoring service's broker. An empty host turns reporting off.
+    char mqtt_host[64];
+    uint16_t mqtt_port;
+    char mqtt_user[33];
+    char mqtt_password[65];
+
+    // Install new firmware without being asked
+    bool auto_update;
 } settings_t;
 
 void settings_load(settings_t *settings);

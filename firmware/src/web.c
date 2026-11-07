@@ -13,11 +13,12 @@
 #include "esp_timer.h"
 #include "mbedtls/base64.h"
 #include "net.h"
+#include "ota.h"
 
 extern const char index_html_start[] asm("_binary_index_html_start");
 extern const char index_html_end[] asm("_binary_index_html_end");
 
-#define MAX_FORM_LENGTH 768
+#define MAX_FORM_LENGTH 1100
 #define MIN_UI_PASSWORD_LENGTH 8
 #define OTA_CHUNK_SIZE 2048
 
@@ -146,20 +147,22 @@ static esp_err_t get_status(httpd_req_t *req)
 {
     if (!authorized(req)) return ESP_OK;
 
-    static char json[1400];
+    static char json[1500];
     xSemaphoreTake(lock, portMAX_DELAY);
-    int length = base_status_json(base, json, sizeof(json) - 200);
+    int length = base_status_json(base, json, sizeof(json) - 300);
     xSemaphoreGive(lock);
 
-    if (length <= 0 || length >= (int)sizeof(json) - 200) return httpd_resp_send_500(req);
+    if (length <= 0 || length >= (int)sizeof(json) - 300) return httpd_resp_send_500(req);
 
     // Add what only this layer knows, before the closing brace
     char address[16];
     net_address(address, sizeof(address));
+    char update[80];
+    ota_status(update, sizeof(update));
     snprintf(json + length - 1, sizeof(json) - (size_t)length + 1,
-             ",\"setup_needed\":%s,\"setup_ssid\":\"%s\",\"address\":\"%s\",\"rssi\":%d,\"uptime_s\":%lld,\"version\":\"%s\"}",
+             ",\"setup_needed\":%s,\"setup_ssid\":\"%s\",\"address\":\"%s\",\"rssi\":%d,\"uptime_s\":%lld,\"version\":\"%s\",\"update_status\":\"%s\"}",
              settings_were_complete ? "false" : "true", net_setup_ssid(), address, net_rssi(),
-             esp_timer_get_time() / 1000000, esp_app_get_description()->version);
+             esp_timer_get_time() / 1000000, esp_app_get_description()->version, update);
 
     httpd_resp_set_type(req, "application/json");
     return httpd_resp_sendstr(req, json);
@@ -170,11 +173,13 @@ static esp_err_t get_settings(httpd_req_t *req)
     if (!authorized(req)) return ESP_OK;
 
     // Passwords are write-only
-    char json[300];
+    char json[480];
     snprintf(json, sizeof(json),
-             "{\"wifi_ssid\":\"%s\",\"ntrip_host\":\"%s\",\"ntrip_port\":%u,\"ntrip_mount\":\"%s\",\"has_password\":%s}",
+             "{\"wifi_ssid\":\"%s\",\"ntrip_host\":\"%s\",\"ntrip_port\":%u,\"ntrip_mount\":\"%s\",\"has_password\":%s,"
+             "\"mqtt_host\":\"%s\",\"mqtt_port\":%u,\"mqtt_user\":\"%s\",\"auto_update\":%s}",
              settings.wifi_ssid, settings.caster.host, settings.caster.port, settings.caster.mountpoint,
-             settings.ui_password[0] ? "true" : "false");
+             settings.ui_password[0] ? "true" : "false",
+             settings.mqtt_host, settings.mqtt_port, settings.mqtt_user, settings.auto_update ? "true" : "false");
     httpd_resp_set_type(req, "application/json");
     return httpd_resp_sendstr(req, json);
 }
@@ -247,7 +252,16 @@ static esp_err_t post_settings(httpd_req_t *req)
     if (form_value(body, "ntrip_mount", text, sizeof(text))) fits &= set_text(updated.caster.mountpoint, sizeof(updated.caster.mountpoint), text);
     if (form_value(body, "ntrip_port", text, sizeof(text)) && text[0]) updated.caster.port = (uint16_t)atoi(text);
 
+    // Empty is allowed for the broker: it turns reporting off
+    if (form_value(body, "mqtt_host", text, sizeof(text))) fits &= set_text(updated.mqtt_host, sizeof(updated.mqtt_host), text);
+    if (form_value(body, "mqtt_port", text, sizeof(text)) && text[0]) updated.mqtt_port = (uint16_t)atoi(text);
+    if (form_value(body, "mqtt_user", text, sizeof(text))) fits &= set_text(updated.mqtt_user, sizeof(updated.mqtt_user), text);
+
+    // A browser leaves an unticked box out of the form
+    updated.auto_update = form_value(body, "auto_update", text, sizeof(text));
+
     // A blank password field means "keep the current one"
+    if (form_value(body, "mqtt_password", text, sizeof(text)) && text[0]) fits &= set_text(updated.mqtt_password, sizeof(updated.mqtt_password), text);
     if (form_value(body, "wifi_password", text, sizeof(text)) && text[0]) fits &= set_text(updated.wifi_password, sizeof(updated.wifi_password), text);
     if (form_value(body, "ntrip_password", text, sizeof(text)) && text[0]) fits &= set_text(updated.caster.password, sizeof(updated.caster.password), text);
     if (form_value(body, "ui_password", text, sizeof(text)) && text[0]) {
@@ -261,6 +275,7 @@ static esp_err_t post_settings(httpd_req_t *req)
     if (updated.wifi_ssid[0] == '\0') return reply(req, "400 Bad Request", "The WiFi network name is required");
     if (updated.ui_password[0] == '\0') return reply(req, "400 Bad Request", "A UI password is required before this goes on your network");
     if (updated.caster.port == 0) return reply(req, "400 Bad Request", "The caster port is not valid");
+    if (updated.mqtt_port == 0) return reply(req, "400 Bad Request", "The broker port is not valid");
 
     if (!settings_save(&updated)) return reply(req, "500 Internal Server Error", "Could not save the settings");
 
@@ -276,6 +291,15 @@ static esp_err_t post_restart(httpd_req_t *req)
     esp_err_t result = reply(req, "200 OK", "Restarting.");
     schedule_restart();
     return result;
+}
+
+static esp_err_t post_update_check(httpd_req_t *req)
+{
+    if (!authorized(req) || !from_our_page(req)) return ESP_OK;
+
+    return ota_request_check(0)
+        ? reply(req, "200 OK", "Checking for an update.")
+        : reply(req, "409 Conflict", "Already checking, or not on a network yet.");
 }
 
 static esp_err_t post_firmware(httpd_req_t *req)
@@ -329,7 +353,7 @@ void web_start(base_station_t *base_station, SemaphoreHandle_t base_lock, const 
 
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
     config.stack_size = 8192;
-    config.max_uri_handlers = 8;
+    config.max_uri_handlers = 9;
     config.lru_purge_enable = true;
 
     httpd_handle_t server = NULL;
@@ -343,6 +367,7 @@ void web_start(base_station_t *base_station, SemaphoreHandle_t base_lock, const 
         { .uri = "/api/settings", .method = HTTP_POST, .handler = post_settings },
         { .uri = "/api/restart", .method = HTTP_POST, .handler = post_restart },
         { .uri = "/api/firmware", .method = HTTP_POST, .handler = post_firmware },
+        { .uri = "/api/update/check", .method = HTTP_POST, .handler = post_update_check },
     };
     for (size_t i = 0; i < sizeof(routes) / sizeof(routes[0]); i++) {
         ESP_ERROR_CHECK(httpd_register_uri_handler(server, &routes[i]));

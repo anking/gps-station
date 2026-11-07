@@ -2,7 +2,7 @@
 
 Turns an ESP32 and a u-blox ZED-F9P into an RTK base station. It finds and configures the module, surveys or uses a fixed position, and streams RTCM corrections to an NTRIP caster such as RTK2go over WiFi. There is no Raspberry Pi, .NET or Node.js involved.
 
-**Status:** tested against a simulated ZED-F9P and caster, and built for both boards below, but not yet run on real hardware. See [First bench test](#first-bench-test).
+**Status:** tested against a simulated ZED-F9P and caster, and built for both boards below, but not yet run on real hardware. That includes updates and reporting, which only run on the board. See [First bench test](#first-bench-test).
 
 ## What you need
 
@@ -50,7 +50,21 @@ The page shows what it is doing, and in plain words what is wrong if anything is
 - **Survey** works out the position by averaging. It is quick to set up, but the default of 60 seconds and 3 m leaves the base up to metres off, and the result changes with every survey. Anything saved in rover coordinates, such as a mowing boundary, moves with it.
 - **Fixed** uses a position you give it. Use this for anything that must line up from day to day. Get the position from a long survey, or from a day of raw data sent to a free service such as [OPUS](https://geodesy.noaa.gov/OPUS/) or [CSRS-PPP](https://webapp.csrs-scrs.nrcan-rncan.gc.ca/geod/tools-outils/ppp.php). Heights are above the ellipsoid, not sea level. The antenna must not move afterwards.
 
-**Firmware updates:** the page accepts a `firmware.bin` from `.pio/build/<board>/`, so a device on a roof can be updated in place. If a new version keeps crashing during its first minute, the board rolls back by itself.
+## Monitoring and over-the-air updates
+
+The base reports to the [Rider monitoring service](https://rider.solvitcorp.com) over MQTT, and keeps its firmware up to date from there, the same way the solar tracker does. Both are on by default, and only need the board to be on your network.
+
+**Reporting:** the status shown on this page goes to `mqtt.solvitcorp.com` every 5 seconds, including the base's exact position. That broker has no login yet, so anyone connecting to it could read that. To turn reporting off, empty the broker field in the settings. To use a broker with a login, fill in its user and password there.
+
+**Automatic updates:** the board asks the service on start and every 10 minutes. If a newer release is active it installs it and restarts, which drops the corrections for under a minute. Untick the setting to install only when you press **Check for update**, or when someone asks from the service.
+
+- It first checks that the image is this project's, and is for this chip.
+- The new version has to run for a minute with a network connection. If it keeps crashing before that, the board goes back to the previous version by itself, and does not install that version again unless someone asks for it by name.
+- Firmware comes over plain HTTP, like the tracker's, because an ESP32 cannot reliably hold TLS through a large download. The board checks the image is sound, but not who built it.
+
+To publish a new version, raise `PROJECT_VER` in [CMakeLists.txt](./CMakeLists.txt), build it, and upload `.pio/build/<board>/firmware.bin` on the service's Firmware page. Each chip needs its own build, and the service holds one active release, so all base stations need the same chip.
+
+**By hand:** the page also accepts a `firmware.bin` directly, so a board can be updated without the service.
 
 ## How it treats the caster
 
@@ -71,10 +85,13 @@ The simulator cannot check real radio, UART timing or WiFi. Before relying on th
 3. Check that your mountpoint appears in the [RTK2go status list](http://rtk2go.com:2101/SNIP::STATUS).
 4. Connect a rover and confirm it reaches RTK Fixed.
 5. Pull the WiFi or restart your router, and power cycle the F9P. The page should report it and recover without help each time.
+6. Check that the base appears on the [monitoring service](https://rider.solvitcorp.com), on the map and with its version.
+7. Upload a build with a higher version, make it active, and press **Check for update** on the page. The board should install it, restart, and report the new version. Corrections should come back by themselves.
+8. Do the same with a build that crashes at start (add `abort();` to the top of `app_main`). The board should come back on the version before it, and report that it will not install that one again. **Keep USB access to the board for this test.**
 
 ## Development
 
-The base station's logic is in [src/core](./src/core), which is portable C. The rest of `src/` connects it to the ESP32: UART, WiFi, flash and the web UI.
+The base station's logic is in [src/core](./src/core), which is portable C. The rest of `src/` connects it to the ESP32: UART, WiFi, flash, the web UI, updates ([ota.c](./src/ota.c)) and reporting ([mqtt_link.c](./src/mqtt_link.c)).
 
 To run it on a Linux PC against a simulated module and caster:
 
@@ -83,4 +100,4 @@ make -C host test    # unit tests
 make -C host e2e     # end-to-end scenarios, Linux only
 ```
 
-These run under AddressSanitizer and exercise the same C code as the firmware, apart from the serial port and the web UI.
+These run under AddressSanitizer and exercise the same C code as the firmware, apart from the serial port, the web UI, and the MQTT and update code, which only runs on the board.

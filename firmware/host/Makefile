@@ -1,7 +1,7 @@
 # Builds and tests the portable firmware core on a PC. The firmware itself builds with PlatformIO, see ../readme.md.
 CC ?= gcc
 CFLAGS ?= -std=gnu11 -O1 -g -Wall -Wextra -Wno-format-truncation -fsanitize=address,undefined -fno-omit-frame-pointer
-CORE := ../src/core/base_station.c ../src/core/caster.c ../src/core/fixed_position.c ../src/core/gnss_stream.c
+CORE := ../src/core/base_station.c ../src/core/caster.c ../src/core/fixed_position.c ../src/core/gnss_stream.c ../src/core/update_policy.c
 HEADERS := $(wildcard ../src/core/*.h)
 
 .PHONY: all test e2e clean

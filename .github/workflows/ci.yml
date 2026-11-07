@@ -33,6 +33,12 @@ jobs:
         run: pip install platformio
       - name: Build
         run: pio run -d firmware -e ${{ matrix.board }}
+      - name: Keep the image to upload to the monitoring service
+        uses: actions/upload-artifact@v4
+        with:
+          name: firmware-${{ matrix.board }}
+          path: firmware/.pio/build/${{ matrix.board }}/firmware.bin
+          retention-days: 30
 
   raspberry-pi-app:
     runs-on: ubuntu-latest

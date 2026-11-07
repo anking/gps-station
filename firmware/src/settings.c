@@ -23,6 +23,9 @@ void settings_load(settings_t *settings)
     settings->mode.kind = BASE_MODE_SURVEY;
     settings->mode.survey_accuracy_mm = 3000;
     settings->mode.survey_seconds = 60;
+    strcpy(settings->mqtt_host, "mqtt.solvitcorp.com");
+    settings->mqtt_port = 1883;
+    settings->auto_update = true;
 
     nvs_handle_t nvs;
     if (nvs_open(NAMESPACE, NVS_READONLY, &nvs) != ESP_OK) return;
@@ -37,6 +40,17 @@ void settings_load(settings_t *settings)
     nvs_get_u16(nvs, "ntrip_port", &settings->caster.port);
     read_text(nvs, "ntrip_mount", settings->caster.mountpoint, sizeof(settings->caster.mountpoint));
     read_text(nvs, "ntrip_pass", settings->caster.password, sizeof(settings->caster.password));
+
+    // Only when one was saved: an empty host is a saved choice to turn reporting off, not a missing value
+    char broker[sizeof(settings->mqtt_host)];
+    size_t broker_size = sizeof(broker);
+    if (nvs_get_str(nvs, "mqtt_host", broker, &broker_size) == ESP_OK) strcpy(settings->mqtt_host, broker);
+    nvs_get_u16(nvs, "mqtt_port", &settings->mqtt_port);
+    read_text(nvs, "mqtt_user", settings->mqtt_user, sizeof(settings->mqtt_user));
+    read_text(nvs, "mqtt_pass", settings->mqtt_password, sizeof(settings->mqtt_password));
+
+    uint8_t auto_update;
+    if (nvs_get_u8(nvs, "auto_update", &auto_update) == ESP_OK) settings->auto_update = auto_update != 0;
 
     base_mode_t mode;
     size_t size = sizeof(mode);
@@ -57,6 +71,11 @@ bool settings_save(const settings_t *settings)
         && nvs_set_u16(nvs, "ntrip_port", settings->caster.port) == ESP_OK
         && nvs_set_str(nvs, "ntrip_mount", settings->caster.mountpoint) == ESP_OK
         && nvs_set_str(nvs, "ntrip_pass", settings->caster.password) == ESP_OK
+        && nvs_set_str(nvs, "mqtt_host", settings->mqtt_host) == ESP_OK
+        && nvs_set_u16(nvs, "mqtt_port", settings->mqtt_port) == ESP_OK
+        && nvs_set_str(nvs, "mqtt_user", settings->mqtt_user) == ESP_OK
+        && nvs_set_str(nvs, "mqtt_pass", settings->mqtt_password) == ESP_OK
+        && nvs_set_u8(nvs, "auto_update", settings->auto_update ? 1 : 0) == ESP_OK
         && nvs_commit(nvs) == ESP_OK;
 
     nvs_close(nvs);

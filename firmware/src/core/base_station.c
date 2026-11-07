@@ -4,7 +4,6 @@
 #include <string.h>
 
 enum {
-    PHASE_NOT_CONFIGURED,
     PHASE_DETECT,
     PHASE_SET_BAUD,
     PHASE_CONFIGURE,
@@ -145,7 +144,10 @@ static void on_rtcm(void *ctx, const uint8_t *frame, uint16_t length)
     base->rtcm_seen = true;
     base->last_rtcm_ms = base->now_ms;
 
-    // Whole frames go out as soon as they are complete, so corrections are as fresh as they can be
+    // Whole frames go out as soon as they are complete, so corrections are as fresh as they can be.
+    // Rovers first: sending to a slow caster can wait, and this cannot.
+    direct_server_send(&base->direct, frame, length);
+
     if (caster_is_streaming(&base->caster) && caster_send(&base->caster, frame, length)) {
         base->frames_sent++;
         base->bytes_sent += length;
@@ -331,7 +333,7 @@ static void maintain_caster(base_station_t *base)
     else base->errors |= BASE_ERROR_NETWORK_DOWN;
 
     // Only while corrections are flowing: a source that connects and sends nothing is dropped and counted against the IP
-    if (!caster_is_open(&base->caster) && network && rtcm_flowing && (int32_t)(now - base->next_connect_ms) >= 0) {
+    if (base->caster_configured && !caster_is_open(&base->caster) && network && rtcm_flowing && (int32_t)(now - base->next_connect_ms) >= 0) {
         caster_open(&base->caster, base->settings.host, base->settings.port, base->settings.mountpoint, base->settings.password, now);
         // Reaching it or not, the next attempt waits until something reschedules it
         base->next_connect_ms = now + HEALTHY_CONNECTION_MS;
@@ -390,7 +392,7 @@ void base_tick(base_station_t *base, uint32_t now_ms)
 {
     base->now_ms = now_ms;
 
-    if (base->phase == PHASE_NOT_CONFIGURED) return;
+    direct_server_poll(&base->direct, now_ms);
 
     if (base->mode_change_pending) {
         base->mode_change_pending = false;
@@ -458,7 +460,7 @@ void base_on_serial(base_station_t *base, const uint8_t *data, size_t length)
     gnss_stream_feed(&base->stream, data, length);
 }
 
-void base_init(base_station_t *base, const base_hal_t *hal, const base_caster_settings_t *settings, const base_mode_t *mode)
+void base_init(base_station_t *base, const base_hal_t *hal, const base_caster_settings_t *settings, const base_mode_t *mode, uint16_t direct_port)
 {
     memset(base, 0, sizeof(*base));
     base->hal = *hal;
@@ -468,13 +470,12 @@ void base_init(base_station_t *base, const base_hal_t *hal, const base_caster_se
 
     gnss_stream_init(&base->stream, on_ubx, on_rtcm, base);
     caster_init(&base->caster);
+    direct_server_init(&base->direct, direct_port);
 
-    // Connecting with empty settings would only count as a bad connection against this IP on a public caster
-    if (settings->host[0] == '\0' || settings->mountpoint[0] == '\0' || settings->password[0] == '\0') {
-        base->errors |= BASE_ERROR_NOT_CONFIGURED;
-        base->phase = PHASE_NOT_CONFIGURED;
-        return;
-    }
+    // Connecting with empty settings would only count as a bad connection against this IP on a public caster.
+    // It is only the backup, so rovers on the network can still be served without it.
+    base->caster_configured = settings->host[0] != '\0' && settings->mountpoint[0] != '\0' && settings->password[0] != '\0';
+    if (!base->caster_configured) base->errors |= BASE_ERROR_NOT_CONFIGURED;
 
     start_detect(base);
 }
@@ -513,7 +514,6 @@ bool base_set_fixed(base_station_t *base, const char *latitude, const char *long
 static const char *phase_name(int phase)
 {
     switch (phase) {
-    case PHASE_NOT_CONFIGURED: return "not_configured";
     case PHASE_DETECT:
     case PHASE_SET_BAUD: return "finding_module";
     case PHASE_CONFIGURE:
@@ -565,6 +565,7 @@ int base_status_json(const base_station_t *base, char *out, size_t capacity)
         "{\"phase\":\"%s\",\"mode\":\"%s\",\"survey_setting_m\":%.3f,\"survey_setting_s\":%u,\"fixed_position\":\"%s\","
         "\"have_position\":%s,\"lat\":%.7f,\"lon\":%.7f,\"height_m\":%.3f,\"accuracy_m\":%.4f,\"satellites\":%u,\"fix_type\":%u,"
         "\"survey_elapsed_s\":%u,\"survey_accuracy_m\":%.4f,\"survey_valid\":%s,"
+        "\"direct_port\":%u,\"direct_rovers\":%d,"
         "\"caster_connected\":%s,\"caster_message\":\"%s\",\"sent_age_ms\":%d,\"frames_sent\":%u,\"bytes_sent\":%u,"
         "\"rtcm_errors\":%u,\"errors\":[%s]}",
         phase_name(base->phase),
@@ -574,6 +575,7 @@ int base_status_json(const base_station_t *base, char *out, size_t capacity)
         base->latitude_e7 / 1e7, base->longitude_e7 / 1e7, base->height_mm / 1000.0,
         base->horizontal_accuracy_tenth_mm / 10000.0, base->satellites, base->fix_type,
         (unsigned)base->survey_elapsed_s, base->survey_mean_accuracy_tenth_mm / 10000.0, base->survey_valid ? "true" : "false",
+        (unsigned)base->direct.port, direct_server_rover_count(&base->direct),
         caster_is_streaming(&base->caster) ? "true" : "false", message,
         base->sent_any ? (int)(base->now_ms - base->last_sent_ms) : -1,
         (unsigned)base->frames_sent, (unsigned)base->bytes_sent,

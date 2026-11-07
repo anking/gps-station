@@ -1,10 +1,14 @@
 // Tests of the portable firmware core, run on a PC with: make -C firmware/host test
 #include <assert.h>
+#include <fcntl.h>
 #include <stdio.h>
 #include <string.h>
+#include <sys/socket.h>
+#include <unistd.h>
 
 #include "../src/core/base_station.h"
 #include "../src/core/caster.h"
+#include "../src/core/direct_server.h"
 #include "../src/core/fixed_position.h"
 #include "../src/core/gnss_stream.h"
 #include "../src/core/update_policy.h"
@@ -208,19 +212,54 @@ static void test_not_configured(void)
     base_caster_settings_t settings = { .port = 2101 };
     base_mode_t mode = { .kind = BASE_MODE_SURVEY, .survey_accuracy_mm = 3000, .survey_seconds = 60 };
 
-    base_init(&base, &hal, &settings, &mode);
+    base_init(&base, &hal, &settings, &mode, 0);
     base_tick(&base, 1000);
 
     char json[1024];
     int length = base_status_json(&base, json, sizeof(json));
     CHECK(length > 0 && (size_t)length < sizeof(json));
-    CHECK(strstr(json, "\"phase\":\"not_configured\"") != NULL);
+    // The caster is only the backup, so the base still gets on with its job
+    CHECK(strstr(json, "\"phase\":\"finding_module\"") != NULL);
     CHECK(strstr(json, "NTRIP_NOT_CONFIGURED") != NULL);
 
     // Text from a caster cannot break the JSON
     strcpy(base.caster.message, "bad \"quote\" \\ here");
     base_status_json(&base, json, sizeof(json));
     CHECK(strstr(json, "\"caster_message\":\"bad  quote    here\"") != NULL);
+}
+
+// --- Direct link -------------------------------------------------------------------------------
+
+static void test_direct_requests(void)
+{
+    CHECK(direct_is_stream_request("GET /base HTTP/1.0\r\n\r\n"));
+    CHECK(direct_is_stream_request("GET /anything HTTP/1.1\r\n\r\n"));
+    CHECK(!direct_is_stream_request("GET / HTTP/1.0\r\n\r\n"));
+    CHECK(!direct_is_stream_request("GET /"));
+    CHECK(!direct_is_stream_request("SOURCE secret /base\r\n\r\n"));
+    CHECK(!direct_is_stream_request("POST /base HTTP/1.0\r\n\r\n"));
+    CHECK(!direct_is_stream_request(""));
+}
+
+static void test_direct_drops_a_stuck_rover(void)
+{
+    int ends[2];
+    CHECK(socketpair(AF_UNIX, SOCK_STREAM, 0, ends) == 0);
+    fcntl(ends[0], F_SETFL, fcntl(ends[0], F_GETFL, 0) | O_NONBLOCK);
+
+    static direct_server_t server;
+    direct_server_init(&server, 0);
+    server.rovers[0].fd = ends[0];
+    server.rovers[0].streaming = true;
+    CHECK(direct_server_rover_count(&server) == 1);
+
+    // Nothing reads the other end, so this fills up. It must never wait for it, or the GPS module would be held up.
+    static const uint8_t frame[1000];
+    for (int i = 0; i < 100000 && direct_server_rover_count(&server) == 1; i++) direct_server_send(&server, frame, sizeof(frame));
+
+    CHECK(direct_server_rover_count(&server) == 0);
+    CHECK(server.rovers[0].fd == -1);
+    close(ends[1]);
 }
 
 // --- Updates -----------------------------------------------------------------------------------
@@ -253,6 +292,8 @@ int main(void)
     test_stream();
     test_caster_protocol();
     test_not_configured();
+    test_direct_requests();
+    test_direct_drops_a_stuck_rover();
     test_update_policy();
 
     printf(failures ? "%d FAILED\n" : "all core tests passed\n", failures);

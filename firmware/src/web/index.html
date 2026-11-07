@@ -55,7 +55,8 @@ a { color: var(--accent); }
       <dt>Accuracy</dt><dd id="accuracy">-</dd>
       <dt>Satellites</dt><dd id="satellites">-</dd>
       <dt id="surveyLabel" class="hide">Survey</dt><dd id="survey" class="hide"></dd>
-      <dt>Caster</dt><dd id="caster">-</dd>
+      <dt>Direct WiFi</dt><dd id="direct">-</dd>
+      <dt>Backup caster</dt><dd id="caster">-</dd>
       <dt>Corrections sent</dt><dd id="sent">-</dd>
       <dt>WiFi</dt><dd id="wifi">-</dd>
       <dt>Firmware</dt><dd id="version">-</dd>
@@ -90,8 +91,9 @@ a { color: var(--accent); }
     <form id="settingsForm">
       <label>WiFi network<input type="text" name="wifi_ssid" autocomplete="off"></label>
       <label>WiFi password<input type="password" name="wifi_password" autocomplete="new-password" placeholder="Unchanged"></label>
-      <label>Caster host<input type="text" name="ntrip_host" autocomplete="off"></label>
-      <label>Caster port<input type="number" name="ntrip_port"></label>
+      <p class="hint">Rovers on this WiFi connect to this board directly. A caster such as RTK2go is their backup for when they cannot.</p>
+      <label>Backup caster host<input type="text" name="ntrip_host" autocomplete="off"></label>
+      <label>Backup caster port<input type="number" name="ntrip_port"></label>
       <label>Mountpoint<input type="text" name="ntrip_mount" autocomplete="off"></label>
       <label>Mountpoint password<input type="password" name="ntrip_password" autocomplete="new-password" placeholder="Unchanged"></label>
       <label>Monitoring broker, empty to turn reporting off<input type="text" name="mqtt_host" autocomplete="off"></label>
@@ -119,7 +121,6 @@ const $ = id => document.getElementById(id);
 const headers = { 'X-Requested-With': 'gps-base' };
 
 const PHASES = {
-  not_configured: 'Waiting for the caster settings',
   finding_module: 'Looking for the GPS module',
   configuring: 'Configuring the GPS module',
   surveying: 'Surveying the base position',
@@ -128,12 +129,12 @@ const PHASES = {
 };
 
 const ERRORS = {
-  NTRIP_NOT_CONFIGURED: 'The caster settings are not filled in.',
+  NTRIP_NOT_CONFIGURED: 'The backup caster settings are not filled in, so rovers can only connect directly.',
   GPS_NOT_CONNECTED: 'No answer from the GPS module. Check the UART wiring.',
   GPS_NO_DATA: 'The GPS module stopped answering.',
   NETWORK_DOWN: 'Not connected to WiFi.',
-  NTRIP_CONNECTION_ERROR: 'Cannot stream to the caster. It retries with a growing delay, up to 15 minutes.',
-  NTRIP_BANNED: 'The caster says this IP is banned. It retries once an hour.',
+  NTRIP_CONNECTION_ERROR: 'Cannot stream to the backup caster. It retries with a growing delay, up to 15 minutes.',
+  NTRIP_BANNED: 'The backup caster says this IP is banned. It retries once an hour.',
   RTCM_OUTPUT_STALLED: 'The GPS module is not producing corrections.',
   INVALID_FIXED_POSITION: 'That position was refused. The base carries on as it was.',
 };
@@ -147,7 +148,7 @@ function age(ms) {
 
 function render(s) {
   const running = s.phase === 'running' && s.caster_connected && s.errors.length === 0;
-  show('stateText', running ? 'Streaming corrections' : s.phase === 'running' ? 'Not streaming to the caster' : (PHASES[s.phase] || s.phase));
+  show('stateText', running ? 'Streaming corrections' : s.phase === 'running' ? 'Running, but not reaching the backup caster' : (PHASES[s.phase] || s.phase));
   $('dot').className = 'dot ' + (running ? 'good' : s.errors.length ? 'bad' : '');
 
   const list = $('errors');
@@ -176,6 +177,8 @@ function render(s) {
   $('survey').classList.toggle('hide', !surveying);
   if (surveying) show('survey', `${s.survey_elapsed_s} s of at least ${s.survey_setting_s} s, ${s.survey_accuracy_m.toFixed(2)} m of ${s.survey_setting_m} m`);
 
+  const rovers = s.direct_rovers === 1 ? '1 rover connected' : s.direct_rovers ? `${s.direct_rovers} rovers connected` : 'No rover connected';
+  show('direct', s.address ? `${rovers}. Rovers use ${s.address}, port ${s.direct_port}` : rovers);
   show('caster', s.caster_connected ? 'Connected' : (s.caster_message || 'Not connected'));
   show('sent', `${age(s.sent_age_ms)}, ${Math.round(s.bytes_sent / 1024)} KB`);
   show('wifi', s.address ? `${s.address}, ${s.rssi} dBm` : 'Not connected');

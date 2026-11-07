@@ -23,7 +23,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        board: [esp32-s3, esp32dev]
+        board: [esp32-c3, esp32-s3, esp32dev]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

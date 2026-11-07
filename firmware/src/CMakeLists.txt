@@ -8,6 +8,7 @@ idf_component_register(
         "mqtt_link.c"
         "core/base_station.c"
         "core/caster.c"
+        "core/direct_server.c"
         "core/fixed_position.c"
         "core/gnss_stream.c"
         "core/update_policy.c"

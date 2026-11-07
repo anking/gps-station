@@ -1,5 +1,5 @@
 // The whole job of the base station: find and configure the ZED-F9P, survey or take a fixed position,
-// and keep its RTCM corrections flowing to an NTRIP caster.
+// and keep its RTCM corrections flowing, straight to rovers on the same network and to an NTRIP caster as their backup.
 //
 // Portable C with no operating system calls beyond BSD sockets, so the same code runs on the ESP32 and, for testing,
 // on a PC against a simulated module. Nothing here blocks except looking up the caster's name.
@@ -10,6 +10,7 @@
 #include <stdint.h>
 
 #include "caster.h"
+#include "direct_server.h"
 #include "fixed_position.h"
 #include "gnss_stream.h"
 
@@ -58,6 +59,7 @@ typedef struct {
 
     gnss_stream_t stream;
     caster_t caster;
+    direct_server_t direct;
 
     int phase;
     uint32_t now_ms;
@@ -80,6 +82,7 @@ typedef struct {
     uint32_t ack_deadline_ms;
 
     // Caster connection
+    bool caster_configured;
     uint32_t backoff_ms;
     uint32_t next_connect_ms;
     uint32_t connected_at_ms;
@@ -105,7 +108,8 @@ typedef struct {
     uint32_t bytes_sent;
 } base_station_t;
 
-void base_init(base_station_t *base, const base_hal_t *hal, const base_caster_settings_t *settings, const base_mode_t *mode);
+// direct_port is where rovers on the network can connect, or 0 for nowhere.
+void base_init(base_station_t *base, const base_hal_t *hal, const base_caster_settings_t *settings, const base_mode_t *mode, uint16_t direct_port);
 
 // Bytes received from the module.
 void base_on_serial(base_station_t *base, const uint8_t *data, size_t length);

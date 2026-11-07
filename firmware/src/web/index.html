@@ -1,0 +1,249 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GPS Base Station</title>
+<style>
+:root { color-scheme: light dark; --bg: #f4f5f7; --card: #fff; --text: #1c1f24; --quiet: #626973; --line: #dfe2e7; --good: #16794c; --bad: #b3261e; --accent: #1f5fbf; }
+@media (prefers-color-scheme: dark) { :root { --bg: #14161a; --card: #1e2127; --text: #e8eaed; --quiet: #9aa1ab; --line: #30343b; --good: #4cc38a; --bad: #f2736b; --accent: #7cacf8; } }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.45 system-ui, sans-serif; }
+main { max-width: 620px; margin: 0 auto; padding: 16px; }
+h1 { font-size: 20px; margin: 4px 0 2px; }
+h2 { font-size: 15px; margin: 0 0 10px; }
+.sub { color: var(--quiet); margin-bottom: 14px; font-size: 13px; }
+section { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 14px; margin-bottom: 12px; }
+#state { font-size: 17px; font-weight: 600; display: flex; align-items: center; gap: 8px; margin: 0 0 4px; }
+.dot { width: 11px; height: 11px; border-radius: 50%; background: var(--quiet); flex: none; }
+.dot.good { background: var(--good); }
+.dot.bad { background: var(--bad); }
+dl { display: grid; grid-template-columns: max-content 1fr; gap: 3px 16px; margin: 10px 0 0; }
+dt { color: var(--quiet); }
+dd { margin: 0; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+#errors { color: var(--bad); margin: 8px 0 0; padding-left: 18px; }
+#errors:empty { display: none; }
+label { display: block; margin-bottom: 9px; font-size: 13px; color: var(--quiet); }
+input[type=text], input[type=password], input[type=number] { display: block; width: 100%; margin-top: 3px; padding: 8px; font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; }
+.radio { display: inline-flex; gap: 6px; align-items: center; margin-right: 16px; color: var(--text); font-size: 15px; }
+button { font: inherit; padding: 8px 14px; border-radius: 6px; border: 1px solid var(--line); background: var(--bg); color: var(--text); cursor: pointer; }
+button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+@media (prefers-color-scheme: dark) { button.primary { color: #111; } }
+.hint { font-size: 13px; color: var(--quiet); margin: 0 0 10px; }
+#note { margin: 8px 0 0; font-size: 13px; }
+#note:empty { display: none; }
+.hide { display: none; }
+a { color: var(--accent); }
+</style>
+</head>
+<body>
+<main>
+  <h1>GPS Base Station</h1>
+  <div class="sub" id="sub"></div>
+
+  <section id="setup" class="hide">
+    <h2>Set this device up</h2>
+    <p class="hint">Fill in the settings below and save. The device then joins your WiFi network, so find its address in your router's device list under <b>gps-base</b>.</p>
+  </section>
+
+  <section>
+    <p id="state"><span class="dot" id="dot"></span><span id="stateText">Connecting...</span></p>
+    <ul id="errors"></ul>
+    <dl>
+      <dt>Position</dt><dd id="position">-</dd>
+      <dt>Height (ellipsoid)</dt><dd id="height">-</dd>
+      <dt>Accuracy</dt><dd id="accuracy">-</dd>
+      <dt>Satellites</dt><dd id="satellites">-</dd>
+      <dt id="surveyLabel" class="hide">Survey</dt><dd id="survey" class="hide"></dd>
+      <dt>Caster</dt><dd id="caster">-</dd>
+      <dt>Corrections sent</dt><dd id="sent">-</dd>
+      <dt>WiFi</dt><dd id="wifi">-</dd>
+      <dt>Firmware</dt><dd id="version">-</dd>
+    </dl>
+  </section>
+
+  <section>
+    <h2>Base position</h2>
+    <div style="margin-bottom:10px">
+      <label class="radio"><input type="radio" name="mode" value="survey" checked> Survey</label>
+      <label class="radio"><input type="radio" name="mode" value="fixed"> Fixed</label>
+    </div>
+    <form id="surveyForm">
+      <p class="hint">Quick to set up, but it changes every time. Saved mowing boundaries would move with it.</p>
+      <label>Accuracy to reach, meters<input type="number" step="any" min="0" name="accuracy" value="3"></label>
+      <label>Minimum time, seconds<input type="number" min="1" name="time" value="60"></label>
+      <button class="primary">Start survey</button>
+    </form>
+    <form id="fixedForm" class="hide">
+      <p class="hint">Use a measured position so rover positions stay repeatable. The antenna must not move afterwards.</p>
+      <label>Latitude, degrees<input type="text" inputmode="decimal" name="lat" autocomplete="off"></label>
+      <label>Longitude, degrees<input type="text" inputmode="decimal" name="lon" autocomplete="off"></label>
+      <label>Height above the ellipsoid, meters<input type="text" inputmode="decimal" name="height" autocomplete="off"></label>
+      <button class="primary">Set position</button>
+    </form>
+    <p id="modeNote" class="hint" style="margin:8px 0 0"></p>
+  </section>
+
+  <section>
+    <h2>Settings</h2>
+    <form id="settingsForm">
+      <label>WiFi network<input type="text" name="wifi_ssid" autocomplete="off"></label>
+      <label>WiFi password<input type="password" name="wifi_password" autocomplete="new-password" placeholder="Unchanged"></label>
+      <label>Caster host<input type="text" name="ntrip_host" autocomplete="off"></label>
+      <label>Caster port<input type="number" name="ntrip_port"></label>
+      <label>Mountpoint<input type="text" name="ntrip_mount" autocomplete="off"></label>
+      <label>Mountpoint password<input type="password" name="ntrip_password" autocomplete="new-password" placeholder="Unchanged"></label>
+      <label>Password for this page, at least 8 characters<input type="password" name="ui_password" autocomplete="new-password" placeholder="Unchanged"></label>
+      <button class="primary">Save and restart</button>
+    </form>
+  </section>
+
+  <section>
+    <h2>Maintenance</h2>
+    <label>Firmware file (firmware.bin)<input type="file" id="firmware" accept=".bin"></label>
+    <button id="upload">Update firmware</button>
+    <button id="restart">Restart</button>
+    <p id="note"></p>
+  </section>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+const headers = { 'X-Requested-With': 'gps-base' };
+
+const PHASES = {
+  not_configured: 'Waiting for the caster settings',
+  finding_module: 'Looking for the GPS module',
+  configuring: 'Configuring the GPS module',
+  surveying: 'Surveying the base position',
+  running: 'Running',
+  retrying: 'GPS module problem, retrying',
+};
+
+const ERRORS = {
+  NTRIP_NOT_CONFIGURED: 'The caster settings are not filled in.',
+  GPS_NOT_CONNECTED: 'No answer from the GPS module. Check the UART wiring.',
+  GPS_NO_DATA: 'The GPS module stopped answering.',
+  NETWORK_DOWN: 'Not connected to WiFi.',
+  NTRIP_CONNECTION_ERROR: 'Cannot stream to the caster. It retries with a growing delay, up to 15 minutes.',
+  NTRIP_BANNED: 'The caster says this IP is banned. It retries once an hour.',
+  RTCM_OUTPUT_STALLED: 'The GPS module is not producing corrections.',
+  INVALID_FIXED_POSITION: 'That position was refused. The base carries on as it was.',
+};
+
+function show(id, text) { $(id).textContent = text; }
+
+function age(ms) {
+  if (ms < 0) return 'Nothing yet';
+  return ms < 2000 ? 'Just now' : Math.round(ms / 1000) + ' s ago';
+}
+
+function render(s) {
+  const running = s.phase === 'running' && s.caster_connected && s.errors.length === 0;
+  show('stateText', running ? 'Streaming corrections' : s.phase === 'running' ? 'Not streaming to the caster' : (PHASES[s.phase] || s.phase));
+  $('dot').className = 'dot ' + (running ? 'good' : s.errors.length ? 'bad' : '');
+
+  const list = $('errors');
+  list.textContent = '';
+  for (const flag of s.errors) {
+    const item = document.createElement('li');
+    item.textContent = ERRORS[flag] || flag;
+    list.appendChild(item);
+  }
+
+  if (s.have_position) {
+    show('position', '');
+    const link = document.createElement('a');
+    link.href = `https://www.google.com/maps?q=${s.lat},${s.lon}`;
+    link.target = '_blank';
+    link.rel = 'noopener';
+    link.textContent = `${s.lat.toFixed(7)}, ${s.lon.toFixed(7)}`;
+    $('position').appendChild(link);
+    show('height', s.height_m.toFixed(3) + ' m');
+    show('accuracy', s.accuracy_m.toFixed(3) + ' m');
+    show('satellites', s.satellites);
+  }
+
+  const surveying = s.phase === 'surveying';
+  $('surveyLabel').classList.toggle('hide', !surveying);
+  $('survey').classList.toggle('hide', !surveying);
+  if (surveying) show('survey', `${s.survey_elapsed_s} s of at least ${s.survey_setting_s} s, ${s.survey_accuracy_m.toFixed(2)} m of ${s.survey_setting_m} m`);
+
+  show('caster', s.caster_connected ? 'Connected' : (s.caster_message || 'Not connected'));
+  show('sent', `${age(s.sent_age_ms)}, ${Math.round(s.bytes_sent / 1024)} KB`);
+  show('wifi', s.address ? `${s.address}, ${s.rssi} dBm` : 'Not connected');
+  show('version', s.version);
+  show('modeNote', s.mode === 'fixed' ? `Currently fixed at ${s.fixed_position}` : `Currently using a survey: ${s.survey_setting_m} m, at least ${s.survey_setting_s} s`);
+
+  $('setup').classList.toggle('hide', !s.setup_needed);
+  show('sub', s.setup_needed ? `Setup network ${s.setup_ssid}` : `Up ${Math.floor(s.uptime_s / 60)} min`);
+}
+
+async function refresh() {
+  try {
+    const response = await fetch('/api/status');
+    if (response.ok) render(await response.json());
+  } catch (e) {
+    show('stateText', 'Cannot reach the device');
+    $('dot').className = 'dot bad';
+  }
+}
+
+async function post(path, form) {
+  const body = new URLSearchParams(new FormData(form)).toString();
+  const response = await fetch(path, { method: 'POST', headers: { ...headers, 'Content-Type': 'application/x-www-form-urlencoded' }, body });
+  return (await response.json()).message;
+}
+
+for (const radio of document.querySelectorAll('input[name=mode]')) {
+  radio.addEventListener('change', () => {
+    $('surveyForm').classList.toggle('hide', radio.value !== 'survey' || !radio.checked);
+    $('fixedForm').classList.toggle('hide', radio.value !== 'fixed' || !radio.checked);
+  });
+}
+
+function submitMode(form, mode) {
+  form.addEventListener('submit', async event => {
+    event.preventDefault();
+    const data = new FormData(form);
+    data.set('mode', mode);
+    const response = await fetch('/api/mode', { method: 'POST', headers: { ...headers, 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams(data).toString() });
+    show('modeNote', (await response.json()).message);
+  });
+}
+submitMode($('surveyForm'), 'survey');
+submitMode($('fixedForm'), 'fixed');
+
+$('settingsForm').addEventListener('submit', async event => {
+  event.preventDefault();
+  show('note', await post('/api/settings', event.target));
+  event.target.scrollIntoView();
+  show('stateText', 'Restarting...');
+});
+
+$('restart').addEventListener('click', async () => {
+  const response = await fetch('/api/restart', { method: 'POST', headers });
+  show('note', (await response.json()).message);
+});
+
+$('upload').addEventListener('click', async () => {
+  const file = $('firmware').files[0];
+  if (!file) return show('note', 'Choose a firmware file first.');
+  show('note', 'Uploading...');
+  const response = await fetch('/api/firmware', { method: 'POST', headers, body: file });
+  show('note', (await response.json()).message);
+});
+
+fetch('/api/settings').then(r => r.json()).then(s => {
+  const form = $('settingsForm');
+  form.wifi_ssid.value = s.wifi_ssid;
+  form.ntrip_host.value = s.ntrip_host;
+  form.ntrip_port.value = s.ntrip_port;
+  form.ntrip_mount.value = s.ntrip_mount;
+}).catch(() => {});
+
+refresh();
+setInterval(refresh, 1000);
+</script>
+</body>
+</html>

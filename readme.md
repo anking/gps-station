@@ -1,6 +1,12 @@
-# RTK GPS Base Station for Raspberry Pi
+# RTK GPS Base Station
 
-This application uses a **u-blox ZED-F9P RTK GPS receiver** to broadcast **RTCM correction data** to an **NTRIP caster** (such as **RTK2go** or any SNIP service). Designed to run on a **Raspberry Pi**, it provides the corrections for [gps-rider](https://github.com/anking/gps-rider) and other rovers.
+A **u-blox ZED-F9P RTK GPS receiver** broadcasting **RTCM correction data** to an **NTRIP caster** (such as **RTK2go** or any SNIP service), providing the corrections for [gps-rider](https://github.com/anking/gps-rider) and other rovers.
+
+**The base station now runs on an ESP32. See [firmware/](./firmware).** It needs no Raspberry Pi, .NET or Node.js, and does everything the Pi did except drive a screen on the device itself.
+
+The rest of this page describes the original Raspberry Pi application. It stays only until the firmware has passed its [first bench test](./firmware/readme.md#first-bench-test) on real hardware, and should then be removed along with its dependency on the [zedf9p-server](https://github.com/anking/zedf9p-server) driver.
+
+# Raspberry Pi application
 
 ## Features
 - **NTRIP Server**: Streams GPS correction data to an NTRIP caster, and recovers by itself from caster and module problems.

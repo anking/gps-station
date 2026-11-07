@@ -1,16 +1,22 @@
 import express from 'express';
 import { createServer } from 'http';
+import * as path from 'path';
 import { Server as SocketServer } from 'socket.io';
-import { fork, exec, ChildProcess, spawn } from 'child_process';
+import { fork, exec, ChildProcess, spawn, spawnSync } from 'child_process';
 import logger from './utils/logger';
-import { config } from './config';
+import { config, isSet } from './config';
+import { httpAuth, socketAuth } from './auth';
+import { isSafeCommandParams } from './baseMode';
+
+const GPS_RESTART_DELAY_MS = 5000;
 
 let gpsProcess: ChildProcess | null = null;
 let gpsData: GpsProcessSyncData;
 let lastGpsUpdate = 0;
 let gpsUpdateScheduled = false;
 const webServerUrl = `http://localhost:${config.webServerPort}`;
-let browserProcess: any = null;
+let browserProcess: ChildProcess | null = null;
+let shuttingDown = false;
 
 const expressServer = express();
 const server = createServer(expressServer);
@@ -24,44 +30,51 @@ const main = async (): Promise<void> => {
   // Connect gps process
   createGpsProcess();
 
-  // Start browser on RPi
-  startBrowser();
-
   // Setup Express
   setupWebServer();
 
-  process.on('SIGINT', () => {
-    logger.info('Shutting down the server...');
-    shutdownBrowser();
-    process.exit();
-  });
+  // Start browser on RPi
+  if (config.kioskBrowser) {
+    startBrowser();
+  }
 
-  process.on('SIGTERM', () => {
-    logger.info('Shutting down the server...');
-    server.close();
-    shutdownBrowser();
-    process.exit();
-  });
+  process.on('SIGINT', () => shutdown());
+  process.on('SIGTERM', () => shutdown());
+};
+
+const shutdown = (): void => {
+  logger.info('Shutting down the server...');
+  shuttingDown = true;
+  gpsProcess?.kill();
+  shutdownBrowser();
+  server.close();
+  process.exit();
 };
 
 const setupWebServer = (): void => {
-  expressServer.get('/', (_, res) => {
-    res.sendFile(__dirname + '/static/index.html');
-  });
+  // The UI can move the base and switch the machine off, so it never goes on the network without a password
+  const host = config.uiPassword ? undefined : '127.0.0.1';
 
-  expressServer.get('/chat', (_, res) => {
-    res.sendFile(__dirname + '/static/chat.html');
+  if (config.uiPassword) {
+    expressServer.use(httpAuth(config.uiPassword));
+    webServerSocket.use(socketAuth(config.uiPassword));
+  } else {
+    logger.warn('UI_PASSWORD is not set: the web UI is only available on this machine.');
+  }
+
+  expressServer.get('/', (_, res) => {
+    res.sendFile(path.join(__dirname, 'static', 'index.html'));
   });
 
   // API route to expose environment variable
   expressServer.get('/config', (_, res) => {
-    res.json({ googleMapsApiKey: config.googleMapsApiKey });
+    res.json({ googleMapsApiKey: isSet(config.googleMapsApiKey) ? config.googleMapsApiKey : null });
   });
 
   // Starting listening for server
-  server.listen(config.webServerPort, () => {
-    logger.info(`listening on *:${config.webServerPort}`);
-  });
+  const onListening = () => logger.info(`listening on ${host ?? '*'}:${config.webServerPort}`);
+  if (host) server.listen(config.webServerPort, host, onListening);
+  else server.listen(config.webServerPort, onListening);
 
   // Websocket connection made
   webServerSocket.on('connection', (webSocket) => {
@@ -69,37 +82,41 @@ const setupWebServer = (): void => {
 
     webSocket.on('disconnect', () => logger.info('UI user disconnected'));
 
-    webSocket.on('chat message', (msg: string) => {
-      logger.info('message: ' + msg);
-
-      // mirror message back to user
-      webServerSocket.emit('chat message', msg);
-
-      if (gpsProcess && msg === 'gps off') gpsProcess.send(msg);
-      if (gpsProcess && msg === 'gps on') gpsProcess.send(msg);
-    });
-
-    webSocket.on('RESTART_SURVEY', (params: string) => gpsProcess && !gpsProcess.killed && gpsProcess.send('RESTART_SURVEY:' + params));
-    webSocket.on('RESTART_FIXED', (params: string) => gpsProcess && !gpsProcess.killed && gpsProcess.send('RESTART_FIXED:' + params));
+    webSocket.on('RESTART_SURVEY', (params: unknown) => sendReceiverCommand('RESTART_SURVEY', params));
+    webSocket.on('RESTART_FIXED', (params: unknown) => sendReceiverCommand('RESTART_FIXED', params));
 
     webSocket.on('POWER_OFF', () => handleSystemCommand('sudo shutdown now', 'Shutting down'));
     webSocket.on('REBOOT', () => handleSystemCommand('sudo shutdown -r now', 'Rebooting'));
-
-    // RTCM TEST
-    webSocket.on('rtcm', (rtcmData: string) => {
-      logger.info('RTCM: ' + rtcmData);
-    });
   });
 };
 
+const sendReceiverCommand = (name: string, params: unknown): void => {
+  if (!isSafeCommandParams(params)) {
+    logger.warn(`Ignoring ${name} with invalid parameters`);
+    return;
+  }
+
+  if (gpsProcess && !gpsProcess.killed) gpsProcess.send(`${name}:${params}`);
+};
+
+// Current Raspberry Pi OS calls the package "chromium", older images "chromium-browser"
+const findBrowser = (): string | undefined =>
+  ['chromium', 'chromium-browser'].find(name => spawnSync('which', [name]).status === 0);
+
 // Start Chromium in kiosk mode when the server starts
 const startBrowser = () => {
+  const browser = findBrowser();
+  if (!browser) {
+    logger.info('No Chromium found, not opening the kiosk screen. Set KIOSK_BROWSER=false to skip this check.');
+    return;
+  }
+
   logger.chromium("Starting up browser...");
 
-  // Set the DISPLAY environment variable to :0
-  process.env.DISPLAY = ":0";
+  // A service has no display of its own: point it at the desktop session
+  process.env.DISPLAY = process.env.DISPLAY ?? ":0";
 
-  browserProcess = spawn("chromium-browser", [
+  browserProcess = spawn(browser, [
     "--no-sandbox",
     "--disable-gpu",
     "--kiosk",
@@ -112,22 +129,20 @@ const startBrowser = () => {
     stdio: ["ignore", "pipe", "pipe"]  // Capture stdout and stderr
   });
 
-  browserProcess.stdout.on('data', (data: Buffer) => {
-    // Log stdout with your desired formatting (e.g., prepend with [STDOUT])
+  browserProcess.stdout?.on('data', (data: Buffer) => {
     logger.chromium(data.toString());
   });
 
-  browserProcess.stderr.on('data', (data: Buffer) => {
-    // Log stderr with your desired formatting (e.g., prepend with [STDERR])
-    logger.error(`[CR] ${data.toString()}`);
+  browserProcess.stderr?.on('data', (data: Buffer) => {
+    logger.debug(`[CR] ${data.toString()}`);
   });
 
-  browserProcess.on('error', (err: any) => {
-    logger.error("Failed to start browser:", err);
+  browserProcess.on('error', (err: Error) => {
+    logger.error(`Failed to start browser: ${err.message}`);
   });
 
-  browserProcess.on('exit', (code: number) => {
-    logger.error(`Chromium exited with code: ${code}`);
+  browserProcess.on('exit', (code: number | null) => {
+    logger.info(`Chromium exited with code: ${code}`);
   });
 };
 
@@ -140,15 +155,11 @@ const shutdownBrowser = () => {
 };
 
 const createGpsProcess = (): void => {
-  gpsProcess = fork('build/gps.js', logger.level === 'debug' ? ['--debug'] : []);
+  gpsProcess = fork(path.join(__dirname, 'gps.js'), logger.level === 'debug' ? ['--debug'] : []);
 
   // Getting coordinate data from GPS
-  gpsProcess.on('message', (data: any) => {
+  gpsProcess.on('message', (data: GpsProcessSyncData) => {
     gpsData = data;
-
-    if (data.error) {
-      logger.error('error generated by gps process: ' + data.error);
-    }
 
     const now = Date.now();
     const timeSinceLastUpdate = now - lastGpsUpdate;
@@ -163,10 +174,12 @@ const createGpsProcess = (): void => {
     }
   });
 
-  // Restart GPS process if it exits
-  gpsProcess.on('exit', (code: number) => {
-    logger.info('Gps process exited with code ' + code + '. Trying to restart...');
-    createGpsProcess();
+  // Restart GPS process if it exits, after a delay so a start-up failure cannot spin
+  gpsProcess.on('exit', (code: number | null) => {
+    if (shuttingDown) return;
+
+    logger.info(`Gps process exited with code ${code}. Restarting in ${GPS_RESTART_DELAY_MS / 1000}s...`);
+    setTimeout(createGpsProcess, GPS_RESTART_DELAY_MS);
   });
 };
 

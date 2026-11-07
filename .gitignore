@@ -85,3 +85,15 @@ typings/
 
 # Ignore build artifacts
 build/
+# Driver downloaded by install.sh, and the saved base mode
+f9p/
+data/
+
+# Firmware build output
+firmware/.pio/
+firmware/sdkconfig.*
+!firmware/sdkconfig.defaults
+firmware/host/base_host
+firmware/host/core_tests
+firmware/.vscode/
+__pycache__/

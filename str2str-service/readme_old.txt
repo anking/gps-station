@@ -30,7 +30,7 @@ make install
 
 ### 4. Run str2str to Stream Data
 ```sh
-/usr/local/bin/str2str -in serial://ttyACM0:115200:8:n:1:off -out ntrips://:6n9c2TxqKwuc@rtk2go.com:2101/Wexford
+/usr/local/bin/str2str -in serial://ttyACM0:115200:8:n:1:off -out ntrips://:[PASSWORD]@rtk2go.com:2101/[MOUNT_POINT]
 ```
 - Replace `ttyACM0` with the actual mounted device name.
 - Check updates at [RTK2go Status](http://rtk2go.com:2101/SNIP::STATUS#single).
@@ -88,7 +88,7 @@ Create `location.service` in `/etc/systemd/system/`:
 Description=RTCM Base Station
 
 [Service]
-ExecStart=/usr/local/bin/str2str -in serial://ttyACM0:115200:8:n:1:off -out ntrips://:6n9c2TxqKwuc@rtk2go.com:2101/Wexford
+ExecStart=/usr/local/bin/str2str -in serial://ttyACM0:115200:8:n:1:off -out ntrips://:[PASSWORD]@rtk2go.com:2101/[MOUNT_POINT]
 Restart=always
 User=nobody
 RestartSec=1

@@ -30,8 +30,8 @@ button { font: inherit; padding: 8px 14px; border-radius: 6px; border: 1px solid
 button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
 @media (prefers-color-scheme: dark) { button.primary { color: #111; } }
 .hint { font-size: 13px; color: var(--quiet); margin: 0 0 10px; }
-#note { margin: 8px 0 0; font-size: 13px; }
-#note:empty { display: none; }
+#note, #settingsNote { margin: 8px 0 0; font-size: 13px; }
+#note:empty, #settingsNote:empty { display: none; }
 .hide { display: none; }
 a { color: var(--accent); }
 </style>
@@ -101,8 +101,9 @@ a { color: var(--accent); }
       <label>Broker user, if it needs one<input type="text" name="mqtt_user" autocomplete="off"></label>
       <label>Broker password<input type="password" name="mqtt_password" autocomplete="new-password" placeholder="Unchanged"></label>
       <label class="radio"><input type="checkbox" name="auto_update"> Install firmware updates automatically</label>
-      <label>Password for this page, at least 8 characters<input type="password" name="ui_password" autocomplete="new-password" placeholder="Unchanged"></label>
+      <label>Password for this page, at least 8 characters<input type="password" name="ui_password" autocomplete="new-password" minlength="8" placeholder="Unchanged"></label>
       <button class="primary">Save and restart</button>
+      <p id="settingsNote"></p>
     </form>
   </section>
 
@@ -200,12 +201,6 @@ async function refresh() {
   }
 }
 
-async function post(path, form) {
-  const body = new URLSearchParams(new FormData(form)).toString();
-  const response = await fetch(path, { method: 'POST', headers: { ...headers, 'Content-Type': 'application/x-www-form-urlencoded' }, body });
-  return (await response.json()).message;
-}
-
 for (const radio of document.querySelectorAll('input[name=mode]')) {
   radio.addEventListener('change', () => {
     $('surveyForm').classList.toggle('hide', radio.value !== 'survey' || !radio.checked);
@@ -225,11 +220,18 @@ function submitMode(form, mode) {
 submitMode($('surveyForm'), 'survey');
 submitMode($('fixedForm'), 'fixed');
 
+// The answer goes right under the button, because a refusal says what to fix
 $('settingsForm').addEventListener('submit', async event => {
   event.preventDefault();
-  show('note', await post('/api/settings', event.target));
-  event.target.scrollIntoView();
-  show('stateText', 'Restarting...');
+  show('settingsNote', 'Saving...');
+  try {
+    const body = new URLSearchParams(new FormData(event.target)).toString();
+    const response = await fetch('/api/settings', { method: 'POST', headers: { ...headers, 'Content-Type': 'application/x-www-form-urlencoded' }, body });
+    show('settingsNote', (await response.json()).message);
+    if (response.ok) show('stateText', 'Restarting...');
+  } catch (e) {
+    show('settingsNote', 'No answer from the device. If it restarted, it is joining your WiFi now.');
+  }
 });
 
 $('restart').addEventListener('click', async () => {
@@ -260,6 +262,14 @@ fetch('/api/settings').then(r => r.json()).then(s => {
   form.mqtt_port.value = s.mqtt_port;
   form.mqtt_user.value = s.mqtt_user;
   form.auto_update.checked = s.auto_update;
+
+  // Nothing is saved yet on a new device, so there is nothing to keep unchanged
+  if (!s.wifi_ssid) form.wifi_password.placeholder = '';
+  if (!s.ntrip_mount) form.ntrip_password.placeholder = '';
+  if (!s.has_password) {
+    form.ui_password.required = true;
+    form.ui_password.placeholder = 'Required';
+  }
 }).catch(() => {});
 
 refresh();

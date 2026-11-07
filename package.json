@@ -1,32 +1,33 @@
 {
   "name": "StationApp",
-  "version": "2.0.0",
-  "description": "",
-  "main": "index.ts",
+  "version": "3.0.0",
+  "description": "RTK base station for a ZED-F9P on a Raspberry Pi",
+  "main": "build/index.js",
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "tsc": "tsc",
     "build": "tsc && npm run copy-assets",
-    "copy-assets": "mkdir -p build/static build/f9p && copyfiles -u 1 src/static/**/* build/ && copyfiles -u 1 f9p/** build/f9p && chmod -R 744 build/f9p/Zedf9p",
+    "copy-assets": "node scripts/copy-assets.js",
     "start": "node ./build/index.js",
-    "debug": "node ./build/index.js --debug"
+    "debug": "node ./build/index.js --debug",
+    "test": "npm run build && node --test \"build/test/*.test.js\""
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "bitwise-buffer": "^1.0.2",
-    "dotenv": "^16.4.7",
-    "express": "^4.21.2",
-    "gps": "^0.6.0",
-    "raspi": "^6.0.1",
+    "dotenv": "^17.2.3",
+    "express": "^5.1.0",
     "serialport": "^13.0.0",
     "socket.io": "^4.8.1",
-    "typescript": "^5.7.3",
     "winston": "^3.17.0"
   },
   "devDependencies": {
     "@types/express": "^5.0.0",
-    "@types/node": "^22.13.4",
-    "copyfiles": "^2.4.1"
+    "@types/node": "^24.0.0",
+    "socket.io-client": "^4.8.1",
+    "typescript": "^5.9.0"
   }
 }

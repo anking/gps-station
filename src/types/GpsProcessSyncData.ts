@@ -7,6 +7,6 @@ interface GpsProcessSyncData {
     survey_valid?: boolean | null;
     receiver_mode?: ReceiverModeEnum | null;
     set_accuracy?: number | null;
-    last_ntrip_sent?: Date | null;
-    errors?: any;
+    last_ntrip_sent?: string | null;
+    errors?: string[];
 }

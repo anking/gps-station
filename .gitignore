@@ -85,3 +85,6 @@ typings/
 
 # Ignore build artifacts
 build/
+# Driver downloaded by install.sh, and the saved base mode
+f9p/
+data/

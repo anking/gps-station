@@ -1,112 +1,92 @@
-#!/bin/bash
+#!/usr/bin/env bash
+# Sets up the base station on a Raspberry Pi. Safe to run again to update.
+set -euo pipefail
 
-# Check if Git is installed
-if ! command -v git &> /dev/null
-then
-    echo "Git not found, installing..."
-    sudo apt-get update
-    sudo apt-get install git -y
-else
-    echo "Git is already installed."
-fi
+INSTALL_DIR="${INSTALL_DIR:-$HOME/gps-station}"
+REPO_URL="https://github.com/anking/gps-station.git"
+DRIVER_BASE_URL="https://github.com/anking/zedf9p-server/releases/latest/download"
 
-# Check if Node.js is installed, and install it if necessary
-if ! command -v node &> /dev/null
-then
-    echo "Node.js not found, installing..."
-    curl -sL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+case "$(uname -m)" in
+    aarch64)
+        DRIVER_ZIP="linux-arm64.zip"
+        NODE_MAJOR=24
+        ;;
+    armv7l)
+        # Node 24 has no 32-bit ARM build
+        DRIVER_ZIP="linux-arm.zip"
+        NODE_MAJOR=22
+        ;;
+    *)
+        echo "Unsupported architecture: $(uname -m)" >&2
+        exit 1
+        ;;
+esac
+
+echo "Installing packages..."
+sudo apt-get update
+sudo apt-get install -y git unzip curl openssl
+
+current_node_major() {
+    command -v node > /dev/null 2>&1 && node -p "process.versions.node.split('.')[0]" || echo 0
+}
+
+if [ "$(current_node_major)" -lt 22 ]; then
+    echo "Installing Node.js ${NODE_MAJOR}..."
+    curl -fsSL "https://deb.nodesource.com/setup_${NODE_MAJOR}.x" | sudo -E bash -
     sudo apt-get install -y nodejs
 else
-    echo "Node.js is already installed."
+    echo "Node.js $(node -v) is already installed."
 fi
 
-# Clone the repository if not already done
-if [ ! -d "gps-station" ]; then
-    echo "Cloning GPS Station repository..."
-    git clone https://github.com/anking/gps-station.git
+if [ -d "$INSTALL_DIR/.git" ]; then
+    echo "Updating $INSTALL_DIR..."
+    git -C "$INSTALL_DIR" pull --ff-only
 else
-    echo "Repository already exists."
+    echo "Cloning into $INSTALL_DIR..."
+    git clone "$REPO_URL" "$INSTALL_DIR"
 fi
 
-# Compile driver artifacts instruction
-echo "Compile driver artifacts and place them in ./f9p directory as per instructions from zedf9p-server README."
+cd "$INSTALL_DIR"
 
-# Ask user for 32 or 64 bit ARM processor
-echo "Determining system architecture..."
+echo "Downloading the F9P driver..."
+tmp_zip="$(mktemp --suffix=.zip)"
+curl -fL "$DRIVER_BASE_URL/$DRIVER_ZIP" -o "$tmp_zip"
+rm -rf f9p
+mkdir -p f9p
+unzip -q "$tmp_zip" -d f9p
+rm -f "$tmp_zip"
+chmod 755 f9p/Zedf9p
 
-ARCH=$(uname -m)
-
-# Set the ARTIFACT_URL based on the architecture
-if [[ "$ARCH" == "aarch64" ]]; then
-    echo "64-bit ARM processor detected."
-    ARTIFACT_URL="https://github.com/anking/zedf9p-server/releases/latest/download/linux-arm64.zip"
-elif [[ "$ARCH" == "armv7l" ]]; then
-    echo "32-bit ARM processor detected."
-    ARTIFACT_URL="https://github.com/anking/zedf9p-server/releases/latest/download/linux-arm.zip"
-else
-    echo "Unsupported architecture: $ARCH"
-    exit 1
-fi
-
-
-# Download the appropriate driver artifact
-echo "Downloading driver artifact..."
-mkdir -p ./gps-station/f9p
-wget $ARTIFACT_URL -O ./gps-station/f9p/linux-arm64.zip
-
-# Extract the zip file
-echo "Extracting driver artifact..."
-unzip ./gps-station/f9p/*.zip -d ./gps-station/f9p/
-
-# Create logs directory
-sudo mkdir -p /home/pi/gps-station/logs
-sudo chown pi:pi /home/pi/gps-station/logs
-sudo chmod 755 /home/pi/gps-station/logs
-
-# Install dependencies
-echo "Installing npm dependencies..."
-cd gps-station
-npm install
-
-# Build the application
-echo "Building the application..."
+echo "Installing npm dependencies and building..."
+npm install --no-fund --no-audit
 npm run build
 
-# Make driver executable
-sudo chown pi:pi /home/pi/gps-station/build/f9p/Zedf9p
-sudo chmod 755 /home/pi/gps-station/build/f9p/Zedf9p
+mkdir -p logs data
 
-# Create a symbolic link for the service
-echo "Creating symbolic link for the service..."
-sudo ln -s /home/pi/gps-station/gpsstationweb.service /etc/systemd/system/gpsstationweb.service
+if [ ! -f .env ]; then
+    cp .env.example .env
 
-# Reload system daemons
-echo "Reloading system daemons..."
+    read -r -p "NTRIP mountpoint: " mountpoint
+    read -r -s -p "NTRIP mountpoint password: " ntrip_password
+    echo
+    ui_password="$(openssl rand -base64 18)"
+
+    sed -i \
+        -e "s|^NTRIP_MOUNTPOINT=.*|NTRIP_MOUNTPOINT=${mountpoint}|" \
+        -e "s|^NTRIP_PASSWORD=.*|NTRIP_PASSWORD=${ntrip_password}|" \
+        -e "s|^UI_PASSWORD=.*|UI_PASSWORD=${ui_password}|" \
+        .env
+
+    echo "Generated a web UI password, also saved in $INSTALL_DIR/.env:"
+    echo "    ${ui_password}"
+fi
+chmod 600 .env
+
+echo "Installing the service..."
+sed -e "s|__USER__|$(id -un)|" -e "s|__DIR__|$INSTALL_DIR|" -e "s|__NODE__|$(command -v node)|" gpsstationweb.service \
+    | sudo tee /etc/systemd/system/gpsstationweb.service > /dev/null
 sudo systemctl daemon-reload
-
-# Enable the service
-echo "Enabling the service..."
 sudo systemctl enable gpsstationweb
+sudo systemctl restart gpsstationweb
 
-# Remind about .env file with creds
-echo "Make sure to create the .env file. A sample configuration is available in .env.example."
-read -p "Type 'y' to confirm that you understand you must create a .env file in the gps-station directory with your credentials: " env_ack
-
-# Ask if the user wants to start the service automatically
-read -p "Do you want to start the service now? (y/n): " start_service
-if [ "$start_service" == "y" ]; then
-    # Start the service if user wants to start it
-    echo "Starting the service..."
-    sudo systemctl start gpsstationweb
-    echo "Service started."
-else
-    echo "Service created, but not started."
-fi
-
-# Offer option to restart the machine
-read -p "Do you want to restart the Raspberry Pi now to start the service automatically on boot? (y/n): " restart
-if [ "$restart" == "y" ]; then
-    sudo reboot
-else
-    echo "You can manually restart later for the service to start automatically."
-fi
+echo "Done. Check it with: sudo systemctl status gpsstationweb"

@@ -22,7 +22,7 @@
     <script>
         function loadGoogleMaps(apiKey) {
             if (!apiKey) {
-                console.error("API Key is missing!");
+                console.warn("GOOGLE_MAPS_API_KEY is not set, no map will be shown.");
                 return;
             }
 
@@ -124,8 +124,8 @@
                         $('#receiverMode').text(modeString);
                         setReceiverMode(receiver_mode);
                     }
-                    if (accuracy) $('#accuracy').text(accuracy);
-                    if (survey_time) $('#surveyTime').text(survey_time);
+                    if (accuracy != null) $('#accuracy').text(accuracy);
+                    if (survey_time != null) $('#surveyTime').text(survey_time);
                     if (survey_valid !== undefined) {
                         $('#surveyValid').text(survey_valid).css('color', survey_valid ? 'green' : 'red');
                     }
@@ -135,7 +135,7 @@
                     if (errors) {
                         if (errors.length) {
                             $('#errorOutput').removeClass("d-none").show('fast')
-                            $('#errorMessage').html(errors.join('<br />'))
+                            $('#errorMessage').text(errors.join(', '))
                         }
                         else {
                             $('#errorOutput').hide('fast')
@@ -166,19 +166,24 @@
                     socket.emit("RESTART_SURVEY", `${$('#svAccuracyInput').val() || 3}:${$('#svTimeInput').val() || 60}`);
                 } else {
                     $('#incorrectCoordsAlert').hide('fast');
-                    const lat = parseFloat($('#svLatitudeInput').val());
-                    const lon = parseFloat($('#svLongitudeInput').val());
-                    const alt = ($('#svAltitudeInput').val() || 0) + '000';
 
-                    if (lat < -90 || lat > 90 || lon < -180 || lon > 180) {
+                    // Sent as typed: going through a number would lose digits of a surveyed position
+                    const lat = $('#svLatitudeInput').val().trim();
+                    const lon = $('#svLongitudeInput').val().trim();
+                    const height = $('#svAltitudeInput').val().trim();
+                    const isDecimal = text => /^-?\d+(\.\d+)?$/.test(text);
+
+                    if (!isDecimal(lat) || !isDecimal(lon) || !isDecimal(height)
+                        || Math.abs(lat) > 90 || Math.abs(lon) > 180 || (Number(lat) === 0 && Number(lon) === 0)
+                        || Number(height) < -500 || Number(height) > 9000) {
                         $('#incorrectCoordsAlert').show('fast');
                         return console.log('Incorrect coordinates');
                     }
 
-                    socket.emit("RESTART_FIXED", `${lat}:${lon}:${alt}`);
-                    Cookies.set('latitude', lat, { expires: 365 });
-                    Cookies.set('longitude', lon, { expires: 365 });
-                    Cookies.set('altitude', alt, { expires: 365 });
+                    socket.emit("RESTART_FIXED", `${lat}:${lon}:${height}`);
+                    Cookies.set('baseLatitude', lat, { expires: 365 });
+                    Cookies.set('baseLongitude', lon, { expires: 365 });
+                    Cookies.set('baseHeight', height, { expires: 365 });
                 }
             });
 
@@ -186,9 +191,9 @@
             $('#restartButton').click(() => socket.emit('REBOOT'));
 
             $(".telemetry").click(() => {
-                $('#svLatitudeInput').val(Cookies.get('latitude') || '');
-                $('#svLongitudeInput').val(Cookies.get('longitude') || '');
-                $('#svAltitudeInput').val(Cookies.get('altitude') || '');
+                $('#svLatitudeInput').val(Cookies.get('baseLatitude') || '');
+                $('#svLongitudeInput').val(Cookies.get('baseLongitude') || '');
+                $('#svAltitudeInput').val(Cookies.get('baseHeight') || '');
                 $('#incorrectCoordsAlert').hide('fast');
                 $("#telemetryModel").modal('toggle');
             });
@@ -267,7 +272,7 @@
                 <br />
                 Longitude: <span id="lon"></span>
                 <br />
-                Altitude(m): <span id="alt"></span>
+                Height above ellipsoid(m): <span id="alt"></span>
                 <div id="telemetrySurveyParams" style="display:none">
 
                     Accuracy(m): <span id="accuracy"></span>
@@ -322,7 +327,7 @@
                             </div>
 
                             <div class="input-group flex-nowrap mb-3">
-                                <input type="number" class="form-control" id='svAccuracyInput'
+                                <input type="number" step="any" class="form-control" id='svAccuracyInput'
                                     placeholder="Minimal Accuracy">
                                 <div class="input-group-append">
                                     <span class="input-group-text" id="addon-wrapping">m</span>
@@ -340,21 +345,21 @@
 
                         <fieldset id='fixedModeInputs' disabled>
                             <div class="input-group flex-nowrap mb-3">
-                                <input type="number" class="form-control" id='svLatitudeInput' placeholder="Latitude">
+                                <input type="text" inputmode="decimal" class="form-control" id='svLatitudeInput' placeholder="Latitude">
                                 <div class="input-group-append">
                                     <span class="input-group-text" id="addon-wrapping">deg</span>
                                 </div>
                             </div>
 
                             <div class="input-group flex-nowrap mb-3">
-                                <input type="number" class="form-control" id='svLongitudeInput' placeholder="Longitude">
+                                <input type="text" inputmode="decimal" class="form-control" id='svLongitudeInput' placeholder="Longitude">
                                 <div class="input-group-append">
                                     <span class="input-group-text" id="addon-wrapping">deg</span>
                                 </div>
                             </div>
 
                             <div class="input-group flex-nowrap mb-3">
-                                <input type="number" class="form-control" id='svAltitudeInput' placeholder="Altitude">
+                                <input type="text" inputmode="decimal" class="form-control" id='svAltitudeInput' placeholder="Height above the ellipsoid">
                                 <div class="input-group-append">
                                     <span class="input-group-text" id="addon-wrapping">m</span>
                                 </div>

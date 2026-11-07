@@ -45,7 +45,13 @@ If it cannot join your network for 2 minutes, the setup network comes back as we
 
 ## Using it
 
-The page shows what it is doing, and in plain words what is wrong if anything is. All settings, and the base mode, survive a restart.
+The page shows what it is doing, and in plain words what is wrong if anything is. All settings, and the base mode, survive a restart. It has these tabs:
+
+- **Overview:** whether corrections are going out, to whom, the satellites in use, the base's position, a survey's progress, and the WiFi signal.
+- **Map:** the base on satellite or street imagery. The map library is stored on the board, so only the imagery comes from the internet, through your phone or computer. On the setup network there is none.
+- **Satellites:** where each satellite is in the sky and how strong its signal is. Satellites missing from one side of the sky mean something blocks the antenna there.
+- **Position:** survey or fixed, and **Use the current position** to copy where the module is now into a fixed position, to the full precision it reports.
+- **Settings** and **Maintenance:** WiFi, the backup caster, monitoring, updates, installing a firmware file and restarting.
 
 **Survey or fixed position:** corrections make a rover precise *relative to the base*, so the rover's position is only as right and as repeatable as the base's.
 

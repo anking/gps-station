@@ -51,6 +51,17 @@ typedef struct {
 #define BASE_ERROR_RTCM_STALLED (1u << 6)
 #define BASE_ERROR_INVALID_POSITION (1u << 7)
 
+#define BASE_MAX_SATELLITES 64
+
+typedef struct {
+    uint8_t gnss;           // u-blox numbering: 0 GPS, 1 SBAS, 2 Galileo, 3 BeiDou, 5 QZSS, 6 GLONASS
+    uint8_t id;
+    uint8_t cno;            // Signal strength, dB-Hz
+    int8_t elevation;       // Degrees, or -91 when not known
+    int16_t azimuth;        // Degrees
+    bool used;              // In the position
+} base_satellite_t;
+
 typedef struct {
     base_hal_t hal;
     base_caster_settings_t settings;
@@ -93,11 +104,19 @@ typedef struct {
     int32_t latitude_e7;
     int32_t longitude_e7;
     int32_t height_mm;
+    int8_t latitude_hp;     // 1e-9 degrees, so the position can be copied into a fixed one without losing anything
+    int8_t longitude_hp;
+    int8_t height_hp;       // 0.1 mm
     uint32_t horizontal_accuracy_tenth_mm;
     uint8_t satellites;
     uint8_t fix_type;
     uint8_t receiver_mode;
     uint32_t survey_elapsed_s;
+    uint32_t status_polls;
+    base_satellite_t sky[BASE_MAX_SATELLITES];
+    uint8_t sky_count;
+    bool have_sky;
+    uint32_t sky_at_ms;
     uint32_t survey_mean_accuracy_tenth_mm;
     bool survey_valid;
     bool rtcm_seen;
@@ -124,3 +143,7 @@ bool base_set_fixed(base_station_t *base, const char *latitude, const char *long
 
 // Writes the status as one JSON object. Returns its length, which is >= capacity if it did not fit.
 int base_status_json(const base_station_t *base, char *out, size_t capacity);
+
+// Writes the satellites the module sees, as {"age_ms":N,"sats":[[gnss,id,cno,elevation,azimuth,used],...]}.
+// Same return as base_status_json.
+int base_sky_json(const base_station_t *base, char *out, size_t capacity);

@@ -140,7 +140,7 @@ int main(int argc, char **argv)
         base_tick(&base, now);
 
         if ((int32_t)(now - next_status) >= 0) {
-            char json[1024];
+            char json[1500];
             base_status_json(&base, json, sizeof(json));
             puts(json);
             next_status = now + 500;

@@ -228,6 +228,92 @@ static void test_not_configured(void)
     CHECK(strstr(json, "\"caster_message\":\"bad  quote    here\"") != NULL);
 }
 
+// --- What the page shows --------------------------------------------------------------------------
+
+static void feed_ubx(base_station_t *base, uint8_t id, const uint8_t *payload, uint16_t length)
+{
+    uint8_t frame[1100];
+    size_t total = ubx_frame(frame, sizeof(frame), UBX_CLASS_NAV, id, payload, length);
+    CHECK(total > 0);
+    base_on_serial(base, frame, total);
+}
+
+static void put_le32(uint8_t *p, int32_t value)
+{
+    uint32_t v = (uint32_t)value;
+    p[0] = (uint8_t)v; p[1] = (uint8_t)(v >> 8); p[2] = (uint8_t)(v >> 16); p[3] = (uint8_t)(v >> 24);
+}
+
+static void test_page_data(void)
+{
+    static base_station_t base;
+    base_hal_t hal = { .serial_write = no_write, .serial_set_baud = no_baud, .network_ready = no_network };
+    base_caster_settings_t settings = { .port = 2101 };
+    base_mode_t mode = { .kind = BASE_MODE_SURVEY, .survey_accuracy_mm = 3000, .survey_seconds = 60 };
+    base_init(&base, &hal, &settings, &mode, 0);
+    base_tick(&base, 1000);
+
+    char json[1700];
+    CHECK(base_sky_json(&base, json, sizeof(json)) > 0);
+    CHECK(strcmp(json, "{\"age_ms\":-1,\"sats\":[]}") == 0);
+
+    // The exact position, with the extra digits the module sends separately, and negative ones too
+    uint8_t position[36] = { 0 };
+    put_le32(position + 8, 1512093000);     // longitude, 1e-7 degrees
+    put_le32(position + 12, -338688000);    // latitude
+    put_le32(position + 16, 58500);         // height, mm
+    position[24] = 7;                       // longitude, 1e-9
+    position[25] = (uint8_t)(int8_t)-12;    // latitude, 1e-9
+    position[26] = 3;                       // height, 0.1 mm
+    feed_ubx(&base, UBX_NAV_HPPOSLLH, position, sizeof(position));
+
+    int length = base_status_json(&base, json, sizeof(json));
+    CHECK(strstr(json, "\"lat\":-33.868800012,") != NULL);
+    CHECK(strstr(json, "\"lon\":151.209300007,") != NULL);
+    CHECK(strstr(json, "\"height_m\":58.5003,") != NULL);
+
+    // The web page and MQTT each keep a margin after the status for what they add
+    CHECK(length > 0 && length < 1100);
+
+    // A position just south of the equator still has its sign
+    memset(position + 8, 0, 8);
+    position[25] = (uint8_t)(int8_t)-5;
+    position[24] = 0;
+    feed_ubx(&base, UBX_NAV_HPPOSLLH, position, sizeof(position));
+    base_status_json(&base, json, sizeof(json));
+    CHECK(strstr(json, "\"lat\":-0.000000005,") != NULL);
+
+    // The satellite list: 40 satellites is more than the old limit on a message's length
+    uint8_t sky[8 + 12 * 40] = { 0 };
+    sky[5] = 40;
+    for (int i = 0; i < 40; i++) {
+        uint8_t *entry = sky + 8 + 12 * i;
+        entry[0] = (uint8_t)(i % 4 == 3 ? 6 : i % 4);
+        entry[1] = (uint8_t)(i + 1);
+        entry[2] = (uint8_t)(20 + i);
+        entry[3] = (uint8_t)(int8_t)(i == 39 ? -91 : 5 + i);
+        entry[4] = (uint8_t)((i * 9) & 0xFF);
+        entry[5] = (uint8_t)((i * 9) >> 8);
+        entry[8] = i % 2 == 0 ? 0x08 : 0x00;
+    }
+    base_tick(&base, 1500);
+    feed_ubx(&base, UBX_NAV_SAT, sky, sizeof(sky));
+    base_tick(&base, 1700);
+
+    length = base_sky_json(&base, json, sizeof(json));
+    CHECK(length > 0 && (size_t)length < sizeof(json));
+    CHECK(strncmp(json, "{\"age_ms\":200,\"sats\":[[0,1,20,5,0,1],[1,2,21,6,9,0],", 47) == 0);
+    CHECK(strstr(json, "[6,40,59,-91,351,0]]}") != NULL);
+
+    // The whole list from a full sky fits the page's buffer
+    uint8_t full[8 + 12 * BASE_MAX_SATELLITES];
+    memset(full, 0xFF, sizeof(full));
+    full[5] = BASE_MAX_SATELLITES;
+    feed_ubx(&base, UBX_NAV_SAT, full, sizeof(full));
+    length = base_sky_json(&base, json, sizeof(json));
+    CHECK(length > 0 && (size_t)length < sizeof(json));
+}
+
 // --- Direct link -------------------------------------------------------------------------------
 
 static void test_direct_requests(void)
@@ -292,6 +378,7 @@ int main(void)
     test_stream();
     test_caster_protocol();
     test_not_configured();
+    test_page_data();
     test_direct_requests();
     test_direct_drops_a_stuck_rover();
     test_update_policy();

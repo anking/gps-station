@@ -19,8 +19,10 @@
 #define UBX_NAV_PVT 0x07
 #define UBX_NAV_HPPOSLLH 0x14
 #define UBX_NAV_SVIN 0x3B
+#define UBX_NAV_SAT 0x35
 
-#define UBX_MAX_PAYLOAD 256
+// The satellite list is 8 bytes plus 12 per satellite, and the buffer is shared with the longest RTCM frame
+#define UBX_MAX_PAYLOAD 1024
 #define UBX_OVERHEAD 8
 #define RTCM_MAX_FRAME (3 + 1023 + 3)
 

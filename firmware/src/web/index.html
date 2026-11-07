@@ -3,128 +3,299 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
 <title>GPS Base Station</title>
 <style>
-:root { color-scheme: light dark; --bg: #f4f5f7; --card: #fff; --text: #1c1f24; --quiet: #626973; --line: #dfe2e7; --good: #16794c; --bad: #b3261e; --accent: #1f5fbf; }
-@media (prefers-color-scheme: dark) { :root { --bg: #14161a; --card: #1e2127; --text: #e8eaed; --quiet: #9aa1ab; --line: #30343b; --good: #4cc38a; --bad: #f2736b; --accent: #7cacf8; } }
+:root {
+  --bg: #f2f4f7; --card: #fff; --raised: #f6f7f9; --text: #16191d; --quiet: #5c636d; --faint: #8b929c; --line: #e0e4e9;
+  --accent: #1f63d6; --on-accent: #fff; --good: #12804a; --warn: #a96500; --bad: #c2312a;
+  --good-bg: #e7f5ed; --warn-bg: #fdf4e3; --bad-bg: #fdeceb;
+  --gps: #2f7de1; --galileo: #8b5cd6; --beidou: #d8492f; --glonass: #17946a; --other: #8b929c;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0f1115; --card: #181b21; --raised: #20242b; --text: #e8ebef; --quiet: #a3aab4; --faint: #737b86; --line: #2b3038;
+    --accent: #79a8ff; --on-accent: #0b1220; --good: #47c487; --warn: #e5a53b; --bad: #f26b62;
+    --good-bg: #122a1e; --warn-bg: #2e2513; --bad-bg: #301715;
+    --gps: #6ba7ff; --galileo: #b594ff; --beidou: #ff7b63; --glonass: #4cd29c; --other: #8f96a1;
+  }
+}
 * { box-sizing: border-box; }
-body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.45 system-ui, sans-serif; }
-main { max-width: 620px; margin: 0 auto; padding: 16px; }
-h1 { font-size: 20px; margin: 4px 0 2px; }
-h2 { font-size: 15px; margin: 0 0 10px; }
-.sub { color: var(--quiet); margin-bottom: 14px; font-size: 13px; }
-section { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 14px; margin-bottom: 12px; }
-#state { font-size: 17px; font-weight: 600; display: flex; align-items: center; gap: 8px; margin: 0 0 4px; }
-.dot { width: 11px; height: 11px; border-radius: 50%; background: var(--quiet); flex: none; }
-.dot.good { background: var(--good); }
-.dot.bad { background: var(--bad); }
-dl { display: grid; grid-template-columns: max-content 1fr; gap: 3px 16px; margin: 10px 0 0; }
-dt { color: var(--quiet); }
-dd { margin: 0; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
-#errors { color: var(--bad); margin: 8px 0 0; padding-left: 18px; }
-#errors:empty { display: none; }
-label { display: block; margin-bottom: 9px; font-size: 13px; color: var(--quiet); }
-input[type=text], input[type=password], input[type=number] { display: block; width: 100%; margin-top: 3px; padding: 8px; font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; }
-.radio { display: inline-flex; gap: 6px; align-items: center; margin-right: 16px; color: var(--text); font-size: 15px; }
-button { font: inherit; padding: 8px 14px; border-radius: 6px; border: 1px solid var(--line); background: var(--bg); color: var(--text); cursor: pointer; }
-button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
-@media (prefers-color-scheme: dark) { button.primary { color: #111; } }
-.hint { font-size: 13px; color: var(--quiet); margin: 0 0 10px; }
-#note, #settingsNote { margin: 8px 0 0; font-size: 13px; }
-#note:empty, #settingsNote:empty { display: none; }
-.hide { display: none; }
+[hidden] { display: none !important; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
 a { color: var(--accent); }
+.wrap { max-width: 980px; margin: 0 auto; padding: 0 16px; }
+header { background: var(--card); border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 1000; }
+.top { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-top: 12px; padding-bottom: 8px; }
+.brand { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.brand svg { flex: none; color: var(--accent); }
+.brand > div { min-width: 0; }
+h1 { font-size: 17px; margin: 0; letter-spacing: -.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sub { color: var(--quiet); font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pill { display: inline-flex; align-items: center; gap: 7px; padding: 5px 11px; border-radius: 999px; font-size: 13px; font-weight: 600; background: var(--raised); color: var(--quiet); white-space: nowrap; }
+.pill i { width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+.good { color: var(--good); } .warn { color: var(--warn); } .bad { color: var(--bad); }
+.pill.good { background: var(--good-bg); } .pill.warn { background: var(--warn-bg); } .pill.bad { background: var(--bad-bg); }
+nav { display: flex; gap: 2px; overflow-x: auto; scrollbar-width: none; }
+nav a { padding: 9px 12px 10px; color: var(--quiet); text-decoration: none; font-size: 14px; font-weight: 500; border-bottom: 2px solid transparent; white-space: nowrap; }
+nav a.on { color: var(--text); border-bottom-color: var(--accent); }
+main { padding-top: 16px; padding-bottom: 32px; }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(290px, 1fr)); gap: 14px; }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px; }
+.stack > * + * { margin-top: 14px; }
+h2 { font-size: 12px; font-weight: 650; letter-spacing: .06em; text-transform: uppercase; color: var(--quiet); margin: 0 0 12px; }
+.big { font-size: 30px; font-weight: 650; letter-spacing: -.02em; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.row { display: flex; justify-content: space-between; gap: 12px; padding: 7px 0; border-top: 1px solid var(--line); font-size: 14px; }
+.row:first-of-type { border-top: 0; }
+.row > span:first-child { color: var(--quiet); flex: none; }
+.row > span:last-child { text-align: right; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.mono { font-family: ui-monospace, "SF Mono", Consolas, monospace; font-size: 13.5px; }
+.hint { font-size: 13px; color: var(--quiet); margin: 6px 0 0; }
+.note { font-size: 13px; margin: 10px 0 0; }
+.note:empty { display: none; }
+.alert { margin: 0 0 14px; padding: 10px 14px 10px 32px; border-radius: 10px; background: var(--bad-bg); color: var(--bad); font-size: 14px; }
+.alert.info { background: var(--raised); color: var(--text); padding-left: 14px; }
+.alert li + li { margin-top: 3px; }
+.spark { width: 100%; height: 38px; display: block; margin-top: 10px; }
+.spark path { fill: none; stroke: var(--accent); stroke-width: 1.6; vector-effect: non-scaling-stroke; }
+.spark .area { fill: var(--accent); opacity: .1; stroke: none; }
+.bar { height: 8px; border-radius: 4px; background: var(--raised); overflow: hidden; margin: 6px 0 2px; }
+.bar > i { display: block; height: 100%; width: 0; background: var(--accent); border-radius: 4px; transition: width .4s; }
+.bar.done > i { background: var(--good); }
+.signal { display: inline-flex; align-items: flex-end; gap: 2px; height: 14px; margin-right: 6px; vertical-align: -2px; }
+.signal i { width: 4px; background: var(--line); border-radius: 1px; }
+.signal i.on { background: var(--good); }
+.buttons { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+button, .button { font: inherit; font-size: 14px; padding: 8px 14px; border-radius: 8px; border: 1px solid var(--line); background: var(--raised); color: var(--text); cursor: pointer; text-decoration: none; display: inline-block; }
+button:hover, .button:hover { border-color: var(--faint); }
+button.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); font-weight: 600; }
+button:disabled { opacity: .5; cursor: default; }
+label { display: block; margin: 0 0 10px; font-size: 13px; color: var(--quiet); }
+input[type=text], input[type=password], input[type=number] { display: block; width: 100%; margin-top: 4px; padding: 9px 10px; font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; }
+input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+fieldset { border: 0; padding: 0; margin: 0 0 18px; }
+legend { font-weight: 600; font-size: 14px; margin-bottom: 8px; padding: 0; }
+.check { display: flex; gap: 8px; align-items: center; color: var(--text); font-size: 14px; }
+.segmented { display: inline-flex; background: var(--raised); border: 1px solid var(--line); border-radius: 9px; padding: 3px; margin-bottom: 14px; }
+.segmented button { border: 0; background: transparent; padding: 6px 14px; border-radius: 7px; color: var(--quiet); }
+.segmented button.on { background: var(--card); color: var(--text); box-shadow: 0 1px 2px rgba(0,0,0,.12); }
+#map { height: calc(100vh - 230px); min-height: 320px; border-radius: 12px; border: 1px solid var(--line); background: var(--raised); z-index: 0; }
+.toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 12px; }
+.toolbar .segmented { margin: 0; }
+.toolbar .grow { flex: 1; min-width: 160px; font-size: 13px; color: var(--quiet); }
+.sky { display: grid; grid-template-columns: minmax(260px, 380px) 1fr; gap: 14px; align-items: start; }
+@media (max-width: 720px) { .sky { grid-template-columns: 1fr; } }
+#skyPlot { width: 100%; max-width: 380px; display: block; margin: 0 auto; }
+.sky-grid { fill: none; stroke: var(--line); }
+.sky-label { fill: var(--faint); font-size: 9px; text-anchor: middle; dominant-baseline: middle; }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12.5px; color: var(--quiet); margin-top: 12px; }
+.legend i { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 5px; vertical-align: 0; }
+.legend .hollow { background: transparent !important; border: 1.5px solid var(--faint); }
+#bars { display: flex; align-items: flex-end; gap: 2px; height: 196px; overflow-x: auto; overflow-y: hidden; padding-bottom: 30px; }
+#bars div { flex: 1 0 9px; max-width: 24px; position: relative; height: 100%; display: flex; align-items: flex-end; }
+#bars div i { display: block; width: 100%; border-radius: 3px 3px 0 0; }
+#bars div.unused i { opacity: .35; }
+#bars div span { position: absolute; top: calc(100% + 4px); left: 50%; writing-mode: vertical-rl; transform: translateX(-50%) rotate(180deg); font-size: 9px; line-height: 1; color: var(--faint); white-space: nowrap; }
+.empty { color: var(--quiet); font-size: 14px; padding: 18px 0; text-align: center; }
+progress { width: 100%; height: 8px; margin-top: 10px; accent-color: var(--accent); }
 </style>
 </head>
 <body>
-<main>
-  <h1>GPS Base Station</h1>
-  <div class="sub" id="sub"></div>
-
-  <section id="setup" class="hide">
-    <h2>Set this device up</h2>
-    <p class="hint">Fill in the settings below and save. The device then joins your WiFi network, so find its address in your router's device list under <b>gps-base</b>.</p>
-  </section>
-
-  <section>
-    <p id="state"><span class="dot" id="dot"></span><span id="stateText">Connecting...</span></p>
-    <ul id="errors"></ul>
-    <dl>
-      <dt>Position</dt><dd id="position">-</dd>
-      <dt>Height (ellipsoid)</dt><dd id="height">-</dd>
-      <dt>Accuracy</dt><dd id="accuracy">-</dd>
-      <dt>Satellites</dt><dd id="satellites">-</dd>
-      <dt id="surveyLabel" class="hide">Survey</dt><dd id="survey" class="hide"></dd>
-      <dt>Direct WiFi</dt><dd id="direct">-</dd>
-      <dt>Backup caster</dt><dd id="caster">-</dd>
-      <dt>Corrections sent</dt><dd id="sent">-</dd>
-      <dt>WiFi</dt><dd id="wifi">-</dd>
-      <dt>Firmware</dt><dd id="version">-</dd>
-      <dt>Update</dt><dd id="update">-</dd>
-    </dl>
-  </section>
-
-  <section>
-    <h2>Base position</h2>
-    <div style="margin-bottom:10px">
-      <label class="radio"><input type="radio" name="mode" value="survey" checked> Survey</label>
-      <label class="radio"><input type="radio" name="mode" value="fixed"> Fixed</label>
+<header>
+  <div class="wrap top">
+    <div class="brand">
+      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 13v8M8 21h8"/><circle cx="12" cy="11" r="2"/><path d="M8.5 7.5a5 5 0 0 1 7 0M6 5a8.5 8.5 0 0 1 12 0"/></svg>
+      <div><h1>GPS Base Station</h1><div class="sub" id="sub">Connecting...</div></div>
     </div>
-    <form id="surveyForm">
-      <p class="hint">Quick to set up, but it changes every time. Saved mowing boundaries would move with it.</p>
-      <label>Accuracy to reach, meters<input type="number" step="any" min="0" name="accuracy" value="3"></label>
-      <label>Minimum time, seconds<input type="number" min="1" name="time" value="60"></label>
-      <button class="primary">Start survey</button>
-    </form>
-    <form id="fixedForm" class="hide">
-      <p class="hint">Use a measured position so rover positions stay repeatable. The antenna must not move afterwards.</p>
-      <label>Latitude, degrees<input type="text" inputmode="decimal" name="lat" autocomplete="off"></label>
-      <label>Longitude, degrees<input type="text" inputmode="decimal" name="lon" autocomplete="off"></label>
-      <label>Height above the ellipsoid, meters<input type="text" inputmode="decimal" name="height" autocomplete="off"></label>
-      <button class="primary">Set position</button>
-    </form>
-    <p id="modeNote" class="hint" style="margin:8px 0 0"></p>
+    <span class="pill" id="pill"><i></i><span id="pillText">Connecting</span></span>
+  </div>
+  <nav class="wrap" aria-label="Pages">
+    <a href="#overview" id="tab-overview">Overview</a>
+    <a href="#map" id="tab-map">Map</a>
+    <a href="#sky" id="tab-sky">Satellites</a>
+    <a href="#position" id="tab-position">Position</a>
+    <a href="#settings" id="tab-settings">Settings</a>
+    <a href="#maintenance" id="tab-maintenance">Maintenance</a>
+  </nav>
+</header>
+
+<main class="wrap">
+  <div class="alert info" id="setup" hidden>This device is not set up yet. Fill in <a href="#settings">Settings</a> so it can join your WiFi. You are connected to its setup network, <b id="setupSsid"></b>.</div>
+  <ul class="alert" id="errors" hidden></ul>
+
+  <section id="page-overview" class="grid">
+    <div class="card">
+      <h2>Corrections</h2>
+      <div class="big" id="producing">-</div>
+      <div class="hint" id="producingHint"></div>
+      <div style="margin-top:12px">
+        <div class="row"><span>Direct WiFi</span><span id="direct">-</span></div>
+        <div class="row"><span>Backup caster</span><span id="caster">-</span></div>
+        <div class="row"><span>Uploaded</span><span id="sent">-</span></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Satellites</h2>
+      <div class="big"><span id="sats">-</span> <span class="hint" style="font-size:14px;font-weight:500" id="fix"></span></div>
+      <svg class="spark" id="satsSpark" viewBox="0 0 100 30" preserveAspectRatio="none" aria-label="Satellites over the last 10 minutes"></svg>
+      <div style="margin-top:8px">
+        <div class="row"><span>Accuracy</span><span id="accuracy">-</span></div>
+        <div class="row"><span>Signals</span><span><a href="#sky">Sky view</a></span></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Base position</h2>
+      <div id="positionNone" class="empty">Waiting for a position</div>
+      <div id="positionSome" hidden>
+        <div class="row"><span>Latitude</span><span class="mono" id="lat"></span></div>
+        <div class="row"><span>Longitude</span><span class="mono" id="lon"></span></div>
+        <div class="row"><span>Height (ellipsoid)</span><span class="mono" id="height"></span></div>
+        <div class="row"><span>Mode</span><span id="mode"></span></div>
+        <div class="buttons"><button type="button" id="copy">Copy coordinates</button><a class="button" href="#map">Show on map</a></div>
+        <p class="note" id="copyNote"></p>
+      </div>
+    </div>
+
+    <div class="card" id="surveyCard" hidden>
+      <h2>Survey in progress</h2>
+      <div class="row" style="border:0"><span>Time</span><span id="surveyTime"></span></div>
+      <div class="bar" id="surveyTimeBar"><i></i></div>
+      <div class="row" style="border:0;margin-top:6px"><span>Accuracy</span><span id="surveyAccuracy"></span></div>
+      <div class="bar" id="surveyAccuracyBar"><i></i></div>
+      <p class="hint">Corrections start once both are reached. A longer survey gives a better base position, see <a href="#position">Position</a>.</p>
+    </div>
+
+    <div class="card">
+      <h2>Device</h2>
+      <div class="row"><span>WiFi</span><span id="wifi">-</span></div>
+      <div class="row"><span>Firmware</span><span id="version">-</span></div>
+      <div class="row"><span>Updates</span><span id="update">-</span></div>
+      <div class="row"><span>Up for</span><span id="uptime">-</span></div>
+    </div>
   </section>
 
-  <section>
-    <h2>Settings</h2>
-    <form id="settingsForm">
-      <label>WiFi network<input type="text" name="wifi_ssid" autocomplete="off"></label>
-      <label>WiFi password<input type="password" name="wifi_password" autocomplete="new-password" placeholder="Unchanged"></label>
-      <p class="hint">Rovers on this WiFi connect to this board directly. A caster such as RTK2go is their backup for when they cannot.</p>
-      <label>Backup caster host<input type="text" name="ntrip_host" autocomplete="off"></label>
-      <label>Backup caster port<input type="number" name="ntrip_port"></label>
-      <label>Mountpoint<input type="text" name="ntrip_mount" autocomplete="off"></label>
-      <label>Mountpoint password<input type="password" name="ntrip_password" autocomplete="new-password" placeholder="Unchanged"></label>
-      <label>Monitoring broker, empty to turn reporting off<input type="text" name="mqtt_host" autocomplete="off"></label>
-      <label>Broker port<input type="number" name="mqtt_port"></label>
-      <label>Broker user, if it needs one<input type="text" name="mqtt_user" autocomplete="off"></label>
-      <label>Broker password<input type="password" name="mqtt_password" autocomplete="new-password" placeholder="Unchanged"></label>
-      <label class="radio"><input type="checkbox" name="auto_update"> Install firmware updates automatically</label>
-      <label>Password for this page, at least 8 characters<input type="password" name="ui_password" autocomplete="new-password" minlength="8" placeholder="Unchanged"></label>
+  <section id="page-map" hidden>
+    <div class="toolbar">
+      <div class="segmented" id="layers"><button type="button" data-layer="satellite" class="on">Satellite</button><button type="button" data-layer="street">Street</button></div>
+      <button type="button" id="centre">Centre on base</button>
+      <span class="grow" id="mapInfo"></span>
+    </div>
+    <div id="map"></div>
+    <p class="hint" id="mapNote">The map imagery comes from the internet, through this phone or computer.</p>
+  </section>
+
+  <section id="page-sky" hidden>
+    <div class="sky">
+      <div class="card">
+        <h2>Sky view</h2>
+        <svg id="skyPlot" viewBox="-115 -115 230 230" role="img" aria-label="Where the satellites are in the sky"></svg>
+        <div class="legend" id="legend"></div>
+      </div>
+      <div class="card">
+        <h2>Signal strength</h2>
+        <div id="skySummary" class="hint" style="margin:0 0 12px"></div>
+        <div id="bars"></div>
+        <p class="hint">In dB-Hz. Above about 40 is strong. Signals are weaker near the horizon, but satellites missing from one side of the sky view mean something is blocking the antenna there. Faded bars are satellites the module is not using.</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="page-position" hidden class="stack">
+    <div class="card">
+      <h2>Current</h2>
+      <div id="modeNow">-</div>
+      <p class="hint">Corrections make a rover precise relative to the base, so its position is only as repeatable as the base's.</p>
+    </div>
+    <div class="card">
+      <h2>Change</h2>
+      <div class="segmented" id="modePick"><button type="button" data-mode="survey" class="on">Survey</button><button type="button" data-mode="fixed">Fixed</button></div>
+      <form id="surveyForm">
+        <p class="hint" style="margin:0 0 12px">Quick to set up, but the result changes every time, and anything saved in rover coordinates, such as mowing boundaries, moves with it.</p>
+        <label>Accuracy to reach, meters<input type="number" step="any" min="0" name="accuracy" value="3"></label>
+        <label>Minimum time, seconds<input type="number" min="1" name="time" value="60"></label>
+        <button class="primary">Start survey</button>
+      </form>
+      <form id="fixedForm" hidden>
+        <p class="hint" style="margin:0 0 12px">Use a measured position so rover positions stay the same from day to day. The antenna must not move afterwards. Heights are above the ellipsoid, not sea level.</p>
+        <label>Latitude, degrees<input type="text" inputmode="decimal" name="lat" autocomplete="off"></label>
+        <label>Longitude, degrees<input type="text" inputmode="decimal" name="lon" autocomplete="off"></label>
+        <label>Height above the ellipsoid, meters<input type="text" inputmode="decimal" name="height" autocomplete="off"></label>
+        <div class="buttons" style="margin-top:0"><button class="primary">Set position</button><button type="button" id="useCurrent">Use the current position</button></div>
+        <p class="hint" id="useCurrentHint">Fills in where the module is now. Only worth it after a long survey, or the base keeps that error for good.</p>
+      </form>
+      <p class="note" id="modeNote"></p>
+    </div>
+  </section>
+
+  <section id="page-settings" hidden>
+    <form id="settingsForm" class="card">
+      <fieldset>
+        <legend>WiFi</legend>
+        <label>Network<input type="text" name="wifi_ssid" autocomplete="off"></label>
+        <label>Password<input type="password" name="wifi_password" autocomplete="new-password" placeholder="Unchanged"></label>
+      </fieldset>
+      <fieldset>
+        <legend>Backup caster</legend>
+        <p class="hint" style="margin:0 0 10px">Rovers on this WiFi connect to this board directly. A caster such as RTK2go is their backup for when they cannot.</p>
+        <label>Host<input type="text" name="ntrip_host" autocomplete="off"></label>
+        <label>Port<input type="number" name="ntrip_port"></label>
+        <label>Mountpoint<input type="text" name="ntrip_mount" autocomplete="off"></label>
+        <label>Mountpoint password<input type="password" name="ntrip_password" autocomplete="new-password" placeholder="Unchanged"></label>
+      </fieldset>
+      <fieldset>
+        <legend>Monitoring</legend>
+        <label>Broker, empty to turn reporting off<input type="text" name="mqtt_host" autocomplete="off"></label>
+        <label>Broker port<input type="number" name="mqtt_port"></label>
+        <label>Broker user, if it needs one<input type="text" name="mqtt_user" autocomplete="off"></label>
+        <label>Broker password<input type="password" name="mqtt_password" autocomplete="new-password" placeholder="Unchanged"></label>
+        <label class="check"><input type="checkbox" name="auto_update"> Install firmware updates automatically</label>
+      </fieldset>
+      <fieldset>
+        <legend>This page</legend>
+        <label>Password, at least 8 characters<input type="password" name="ui_password" autocomplete="new-password" minlength="8" placeholder="Unchanged"></label>
+      </fieldset>
       <button class="primary">Save and restart</button>
-      <p id="settingsNote"></p>
+      <p class="note" id="settingsNote"></p>
     </form>
   </section>
 
-  <section>
-    <h2>Maintenance</h2>
-    <label>Firmware file (firmware.bin)<input type="file" id="firmware" accept=".bin"></label>
-    <button id="upload">Update firmware</button>
-    <button id="checkUpdate">Check for update</button>
-    <button id="restart">Restart</button>
-    <p id="note"></p>
+  <section id="page-maintenance" hidden class="grid">
+    <div class="card">
+      <h2>Updates</h2>
+      <div id="updateStatus">-</div>
+      <p class="hint" id="autoUpdate"></p>
+      <div class="buttons"><button type="button" id="checkUpdate">Check for update</button></div>
+      <p class="note" id="updateNote"></p>
+    </div>
+    <div class="card">
+      <h2>Install a firmware file</h2>
+      <label>The firmware.bin built for this board<input type="file" id="firmware" accept=".bin"></label>
+      <button type="button" id="upload">Install</button>
+      <progress id="uploadProgress" max="1" value="0" hidden></progress>
+      <p class="note" id="uploadNote"></p>
+    </div>
+    <div class="card">
+      <h2>Restart</h2>
+      <p class="hint" style="margin:0">Corrections stop for under a minute.</p>
+      <div class="buttons"><button type="button" id="restart">Restart</button></div>
+      <p class="note" id="restartNote"></p>
+    </div>
   </section>
 </main>
 
 <script>
 const $ = id => document.getElementById(id);
-const headers = { 'X-Requested-With': 'gps-base' };
+const show = (id, text) => { $(id).textContent = text; };
+const HEADERS = { 'X-Requested-With': 'gps-base' };
+const FORM = { ...HEADERS, 'Content-Type': 'application/x-www-form-urlencoded' };
+const PAGES = ['overview', 'map', 'sky', 'position', 'settings', 'maintenance'];
 
 const PHASES = {
   finding_module: 'Looking for the GPS module',
   configuring: 'Configuring the GPS module',
-  surveying: 'Surveying the base position',
+  surveying: 'Surveying its position',
   running: 'Running',
   retrying: 'GPS module problem, retrying',
 };
@@ -139,18 +310,106 @@ const ERRORS = {
   RTCM_OUTPUT_STALLED: 'The GPS module is not producing corrections.',
   INVALID_FIXED_POSITION: 'That position was refused. The base carries on as it was.',
 };
+const SERIOUS = ['GPS_NOT_CONNECTED', 'GPS_NO_DATA', 'RTCM_OUTPUT_STALLED'];
 
-function show(id, text) { $(id).textContent = text; }
+// One word for the headline, with PHASES as the explanation under it
+const HEADLINE = { finding_module: 'Starting', configuring: 'Starting', surveying: 'Surveying', running: 'Stalled', retrying: 'GPS problem' };
 
-function age(ms) {
-  if (ms < 0) return 'Nothing yet';
-  return ms < 2000 ? 'Just now' : Math.round(ms / 1000) + ' s ago';
+// A base that has its position reports a time-only fix, which is what it should be doing
+const FIX = ['No fix', 'Dead reckoning', '2D fix', '3D fix', '3D fix', 'Base mode'];
+
+// u-blox numbering: name, letter, colour
+const GNSS = { 0: ['GPS', 'G', 'gps'], 1: ['SBAS', 'S', 'other'], 2: ['Galileo', 'E', 'galileo'], 3: ['BeiDou', 'C', 'beidou'], 5: ['QZSS', 'J', 'other'], 6: ['GLONASS', 'R', 'glonass'] };
+const gnss = g => GNSS[g] || ['Other', '?', 'other'];
+
+let state = null;
+let settings = {};
+let page = null;
+const samples = [];
+
+// --- Formatting ------------------------------------------------------------------------------------
+
+const bytes = n => n < 1024 ? `${n} B` : n < 1048576 ? `${(n / 1024).toFixed(1)} KB` : `${(n / 1048576).toFixed(2)} MB`;
+const age = ms => ms < 0 ? 'never' : ms < 2000 ? 'just now' : ms < 60000 ? `${Math.round(ms / 1000)} s ago` : `${Math.round(ms / 60000)} min ago`;
+const meters = m => m >= 10 ? `${m.toFixed(1)} m` : m >= 1 ? `${m.toFixed(2)} m` : `${(m * 100).toFixed(1)} cm`;
+
+function duration(s) {
+  const d = Math.floor(s / 86400), h = Math.floor(s / 3600) % 24, m = Math.floor(s / 60) % 60;
+  return d ? `${d} d ${h} h` : h ? `${h} h ${m} min` : m ? `${m} min` : `${s} s`;
+}
+
+function signal(rssi) {
+  const level = !rssi ? 0 : rssi >= -55 ? 4 : rssi >= -65 ? 3 : rssi >= -75 ? 2 : 1;
+  return `<span class="signal">${[5, 8, 11, 14].map((h, i) => `<i style="height:${h}px" class="${i < level ? 'on' : ''}"></i>`).join('')}</span>`;
+}
+
+// --- Pages -----------------------------------------------------------------------------------------
+
+function route() {
+  const wanted = location.hash.slice(1);
+  page = PAGES.includes(wanted) ? wanted : state && state.setup_needed ? 'settings' : 'overview';
+  for (const name of PAGES) {
+    $('page-' + name).hidden = name !== page;
+    $('tab-' + name).classList.toggle('on', name === page);
+  }
+  // On a phone the tabs scroll sideways, and the open one should be in view
+  $('tab-' + page).scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  if (page === 'map') openMap();
+  if (page === 'sky') loadSky();
+}
+window.addEventListener('hashchange', route);
+
+// --- Status ----------------------------------------------------------------------------------------
+
+async function poll() {
+  try {
+    const response = await fetch('/api/status', { cache: 'no-store' });
+    if (response.ok) {
+      const first = !state;
+      state = await response.json();
+      remember(state);
+      render(state);
+      if (first) route();
+    }
+  } catch (e) {
+    $('pill').className = 'pill bad';
+    show('pillText', 'Offline');
+    $('pill').title = 'Cannot reach the device';
+  }
+  setTimeout(poll, document.hidden ? 5000 : 1000);
+}
+
+function remember(s) {
+  samples.push({ t: Date.now(), sats: s.satellites, bytes: s.bytes_sent });
+  while (samples.length > 600) samples.shift();
+}
+
+function uploadRate() {
+  const now = samples[samples.length - 1];
+  const before = samples.find(h => now.t - h.t <= 15000);
+  if (!before || before === now || now.bytes < before.bytes) return null;
+  return (now.bytes - before.bytes) / ((now.t - before.t) / 1000);
+}
+
+function sparkline(svg, values) {
+  if (values.length < 2) return;
+  // Scaled to the range seen, since a change of a few satellites is what matters
+  const low = Math.min(...values) - 2, high = Math.max(...values) + 2, step = 100 / (values.length - 1);
+  const points = values.map((v, i) => `${(i * step).toFixed(2)},${(28 - (v - low) / (high - low) * 26).toFixed(2)}`);
+  svg.innerHTML = `<path class="area" d="M0,30 L${points.join(' L')} L100,30 Z"/><path d="M${points.join(' L')}"/>`;
 }
 
 function render(s) {
-  const running = s.phase === 'running' && s.caster_connected && s.errors.length === 0;
-  show('stateText', running ? 'Streaming corrections' : s.phase === 'running' ? 'Running, but not reaching the backup caster' : (PHASES[s.phase] || s.phase));
-  $('dot').className = 'dot ' + (running ? 'good' : s.errors.length ? 'bad' : '');
+  const producing = s.phase === 'running' && !s.errors.includes('RTCM_OUTPUT_STALLED');
+  const serious = s.errors.some(e => SERIOUS.includes(e));
+
+  $('pill').className = 'pill ' + (serious ? 'bad' : producing ? (s.errors.length ? 'warn' : 'good') : 'warn');
+  show('pillText', producing ? 'Sending' : HEADLINE[s.phase] || s.phase);
+  $('pill').title = producing ? 'Sending corrections' : PHASES[s.phase] || '';
+  show('sub', [s.version && 'v' + s.version, s.uptime_s != null && 'up ' + duration(s.uptime_s), s.address].filter(Boolean).join(' · '));
+
+  $('setup').hidden = !s.setup_needed;
+  show('setupSsid', s.setup_ssid || '');
 
   const list = $('errors');
   list.textContent = '';
@@ -159,109 +418,272 @@ function render(s) {
     item.textContent = ERRORS[flag] || flag;
     list.appendChild(item);
   }
+  list.hidden = !s.errors.length;
 
+  // Corrections
+  show('producing', producing ? 'Sending' : HEADLINE[s.phase] || s.phase);
+  show('producingHint', producing ? 'New corrections every second.'
+    : s.phase === 'surveying' ? 'Working out its own position. Corrections start once that is done.'
+    : s.phase === 'running' ? 'The GPS module is not producing corrections.' : PHASES[s.phase] || '');
+  const rovers = s.direct_rovers === 1 ? '1 rover connected' : s.direct_rovers ? `${s.direct_rovers} rovers connected` : 'No rover';
+  $('direct').innerHTML = '';
+  $('direct').append(rovers);
+  if (s.address) {
+    const where = document.createElement('div');
+    where.className = 'hint';
+    where.style.margin = '0';
+    where.textContent = `at ${s.address}, port ${s.direct_port}`;
+    $('direct').append(where);
+  }
+  const mount = settings.ntrip_mount ? `${settings.ntrip_host}/${settings.ntrip_mount}` : settings.ntrip_host || 'the caster';
+  show('caster', s.caster_connected ? `Streaming to ${mount}` : s.errors.includes('NTRIP_NOT_CONFIGURED') ? 'Not set up' : s.caster_message || 'Not connected');
+  const rate = uploadRate();
+  show('sent', s.bytes_sent ? `${bytes(s.bytes_sent)}${rate != null ? `, ${bytes(Math.round(rate))}/s` : ''}, ${age(s.sent_age_ms)}` : 'Nothing yet');
+
+  // Satellites
+  show('sats', s.satellites);
+  show('fix', FIX[s.fix_type] || '');
+  show('accuracy', s.have_position ? meters(s.accuracy_m) : '-');
+  sparkline($('satsSpark'), samples.map(h => h.sats));
+
+  // Position
+  $('positionNone').hidden = s.have_position;
+  $('positionSome').hidden = !s.have_position;
   if (s.have_position) {
-    show('position', '');
-    const link = document.createElement('a');
-    link.href = `https://www.google.com/maps?q=${s.lat},${s.lon}`;
-    link.target = '_blank';
-    link.rel = 'noopener';
-    link.textContent = `${s.lat.toFixed(7)}, ${s.lon.toFixed(7)}`;
-    $('position').appendChild(link);
-    show('height', s.height_m.toFixed(3) + ' m');
-    show('accuracy', s.accuracy_m.toFixed(3) + ' m');
-    show('satellites', s.satellites);
+    show('lat', s.lat.toFixed(9));
+    show('lon', s.lon.toFixed(9));
+    show('height', `${s.height_m.toFixed(4)} m`);
   }
+  const modeText = s.mode === 'fixed' ? `Fixed at ${s.fixed_position}` : `Survey, to ${s.survey_setting_m} m in at least ${s.survey_setting_s} s`;
+  show('mode', s.mode === 'fixed' ? 'Fixed' : 'Survey');
+  show('modeNow', modeText);
 
+  // Survey
   const surveying = s.phase === 'surveying';
-  $('surveyLabel').classList.toggle('hide', !surveying);
-  $('survey').classList.toggle('hide', !surveying);
-  if (surveying) show('survey', `${s.survey_elapsed_s} s of at least ${s.survey_setting_s} s, ${s.survey_accuracy_m.toFixed(2)} m of ${s.survey_setting_m} m`);
-
-  const rovers = s.direct_rovers === 1 ? '1 rover connected' : s.direct_rovers ? `${s.direct_rovers} rovers connected` : 'No rover connected';
-  show('direct', s.address ? `${rovers}. Rovers use ${s.address}, port ${s.direct_port}` : rovers);
-  show('caster', s.caster_connected ? 'Connected' : (s.caster_message || 'Not connected'));
-  show('sent', `${age(s.sent_age_ms)}, ${Math.round(s.bytes_sent / 1024)} KB`);
-  show('wifi', s.address ? `${s.address}, ${s.rssi} dBm` : 'Not connected');
-  show('version', s.version);
-  show('update', s.update_status || '-');
-  show('modeNote', s.mode === 'fixed' ? `Currently fixed at ${s.fixed_position}` : `Currently using a survey: ${s.survey_setting_m} m, at least ${s.survey_setting_s} s`);
-
-  $('setup').classList.toggle('hide', !s.setup_needed);
-  show('sub', s.setup_needed ? `Setup network ${s.setup_ssid}` : `Up ${Math.floor(s.uptime_s / 60)} min`);
-}
-
-async function refresh() {
-  try {
-    const response = await fetch('/api/status');
-    if (response.ok) render(await response.json());
-  } catch (e) {
-    show('stateText', 'Cannot reach the device');
-    $('dot').className = 'dot bad';
+  $('surveyCard').hidden = !surveying;
+  if (surveying) {
+    const timeDone = Math.min(1, s.survey_elapsed_s / s.survey_setting_s);
+    const accuracyDone = s.survey_accuracy_m > 0 ? Math.min(1, s.survey_setting_m / s.survey_accuracy_m) : 0;
+    show('surveyTime', `${duration(s.survey_elapsed_s)} of ${duration(s.survey_setting_s)}`);
+    show('surveyAccuracy', s.survey_accuracy_m > 0 ? `${meters(s.survey_accuracy_m)}, target ${meters(s.survey_setting_m)}` : 'Waiting');
+    $('surveyTimeBar').firstChild.style.width = `${timeDone * 100}%`;
+    $('surveyTimeBar').classList.toggle('done', timeDone >= 1);
+    $('surveyAccuracyBar').firstChild.style.width = `${accuracyDone * 100}%`;
+    $('surveyAccuracyBar').classList.toggle('done', accuracyDone >= 1);
   }
+
+  // Device
+  $('wifi').innerHTML = s.address ? `${signal(s.rssi)}${s.rssi} dBm` : s.setup_needed ? 'Setup network' : 'Not connected';
+  show('version', s.version || '-');
+  show('update', s.update_status || '-');
+  show('uptime', duration(s.uptime_s));
+  show('updateStatus', s.update_status || 'No check yet');
+
+  // Position page
+  $('useCurrent').disabled = !s.have_position;
+
+  if (map) placeBase(false);
 }
 
-for (const radio of document.querySelectorAll('input[name=mode]')) {
-  radio.addEventListener('change', () => {
-    $('surveyForm').classList.toggle('hide', radio.value !== 'survey' || !radio.checked);
-    $('fixedForm').classList.toggle('hide', radio.value !== 'fixed' || !radio.checked);
+$('copy').addEventListener('click', async () => {
+  const text = `${state.lat.toFixed(9)}, ${state.lon.toFixed(9)}`;
+  show('copyNote', await copy(text) ? 'Copied.' : text);
+});
+
+// Pages served over plain HTTP have no clipboard API, so this falls back to the old way
+async function copy(text) {
+  try { await navigator.clipboard.writeText(text); return true; } catch (e) { /* fall back */ }
+  const area = document.createElement('textarea');
+  area.value = text;
+  area.style.cssText = 'position:fixed;opacity:0';
+  document.body.appendChild(area);
+  area.select();
+  let done = false;
+  try { done = document.execCommand('copy'); } catch (e) { /* shown instead */ }
+  area.remove();
+  return done;
+}
+
+// --- Map: the library comes from this board, only the imagery from the internet --------------------
+
+let map = null, base = null, accuracyCircle = null, centred = false, loading = false;
+const layers = {};
+
+function openMap() {
+  if (map) {
+    map.invalidateSize();
+    return;
+  }
+  if (loading) return;
+  loading = true;
+
+  const css = document.createElement('link');
+  css.rel = 'stylesheet';
+  css.href = '/leaflet-1.9.4.css';
+  document.head.appendChild(css);
+
+  const script = document.createElement('script');
+  script.src = '/leaflet-1.9.4.js';
+  script.onload = startMap;
+  script.onerror = () => { loading = false; show('mapNote', 'The map could not be loaded from the device.'); };
+  document.head.appendChild(script);
+}
+
+function startMap() {
+  map = L.map('map', { zoomControl: true }).setView([20, 0], 2);
+  layers.satellite = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+    { maxZoom: 22, maxNativeZoom: 19, attribution: 'Imagery &copy; Esri' });
+  layers.street = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+    { maxZoom: 22, maxNativeZoom: 19, attribution: '&copy; OpenStreetMap contributors' });
+  for (const layer of Object.values(layers)) {
+    layer.on('tileerror', () => show('mapNote', 'The map imagery needs internet on this phone or computer. The base is still marked.'));
+  }
+  layers.satellite.addTo(map);
+  placeBase(true);
+}
+
+function placeBase(centre) {
+  if (!state || !state.have_position) {
+    show('mapInfo', 'Waiting for a position');
+    return;
+  }
+  const point = [state.lat, state.lon];
+  const radius = Math.max(state.accuracy_m, 0.05);
+  if (!base) {
+    accuracyCircle = L.circle(point, { radius, color: '#2f7de1', weight: 1, fillOpacity: 0.12 }).addTo(map);
+    base = L.circleMarker(point, { radius: 7, color: '#fff', weight: 2, fillColor: '#1f63d6', fillOpacity: 1 }).addTo(map).bindTooltip('Base station');
+  } else {
+    base.setLatLng(point);
+    accuracyCircle.setLatLng(point).setRadius(radius);
+  }
+  if (centre || !centred) {
+    map.setView(point, 19);
+    centred = true;
+  }
+  show('mapInfo', `${state.lat.toFixed(7)}, ${state.lon.toFixed(7)}, accurate to ${meters(state.accuracy_m)}`);
+}
+
+for (const button of $('layers').querySelectorAll('button')) {
+  button.addEventListener('click', () => {
+    if (!map) return;
+    for (const other of $('layers').querySelectorAll('button')) other.classList.toggle('on', other === button);
+    for (const [name, layer] of Object.entries(layers)) {
+      if (name === button.dataset.layer) layer.addTo(map); else layer.remove();
+    }
+  });
+}
+$('centre').addEventListener('click', () => map && placeBase(true));
+
+// --- Satellites ------------------------------------------------------------------------------------
+
+let skyTimer = null;
+
+async function loadSky() {
+  clearTimeout(skyTimer);
+  if (page !== 'sky') return;
+  try {
+    const response = await fetch('/api/sky', { cache: 'no-store' });
+    if (response.ok) drawSky(await response.json());
+  } catch (e) { /* tried again shortly */ }
+  skyTimer = setTimeout(loadSky, 5000);
+}
+
+function drawSky(data) {
+  const seen = data.sats.map(([g, id, cno, el, az, used]) => ({ g, id, cno, el, az, used: !!used })).filter(s => s.cno > 0);
+  const plot = $('skyPlot');
+
+  let svg = '';
+  for (const r of [100, 66.7, 33.3]) svg += `<circle class="sky-grid" r="${r}"/>`;
+  svg += '<path class="sky-grid" d="M-100,0H100M0,-100V100"/>';
+  svg += [['N', 0, -108], ['E', 108, 0], ['S', 0, 108], ['W', -108, 0]].map(([t, x, y]) => `<text class="sky-label" x="${x}" y="${y}">${t}</text>`).join('');
+  svg += '<text class="sky-label" x="4" y="-62" style="text-anchor:start">30°</text><text class="sky-label" x="4" y="-29" style="text-anchor:start">60°</text>';
+
+  for (const s of seen) {
+    if (s.el < 0 || s.el > 90) continue;
+    const r = (90 - s.el) / 90 * 100, a = s.az * Math.PI / 180;
+    const x = (r * Math.sin(a)).toFixed(1), y = (-r * Math.cos(a)).toFixed(1);
+    const [name, letter, colour] = gnss(s.g);
+    const size = 3.5 + Math.min(s.cno, 50) / 50 * 4;
+    const fill = s.used ? `fill:var(--${colour})` : `fill:none;stroke:var(--${colour});stroke-width:1.5`;
+    svg += `<circle cx="${x}" cy="${y}" r="${size.toFixed(1)}" style="${fill}"><title>${name} ${s.id}: ${s.cno} dB-Hz, ${s.el}° up, ${s.az}°${s.used ? '' : ', not used'}</title></circle>`;
+  }
+  plot.innerHTML = svg;
+
+  const counts = {};
+  for (const s of seen) counts[s.g] = (counts[s.g] || 0) + 1;
+  $('legend').innerHTML = Object.keys(counts).sort().map(g => `<span><i style="background:var(--${gnss(g)[2]})"></i>${gnss(g)[0]} ${counts[g]}</span>`).join('')
+    + '<span><i class="hollow"></i>Not used</span>';
+
+  const used = seen.filter(s => s.used).length;
+  show('skySummary', data.age_ms < 0 ? 'Waiting for the GPS module' : `${seen.length} satellites heard, ${used} used`);
+
+  const bars = $('bars');
+  if (!seen.length) {
+    bars.innerHTML = '<div class="empty" style="flex:1;max-width:none">No satellites heard yet. Is the antenna connected and outdoors?</div>';
+    return;
+  }
+  bars.innerHTML = seen.sort((a, b) => a.g - b.g || a.id - b.id).map(s => {
+    const [name, letter, colour] = gnss(s.g);
+    return `<div class="${s.used ? '' : 'unused'}" title="${name} ${s.id}: ${s.cno} dB-Hz"><i style="height:${Math.min(s.cno, 55) / 55 * 100}%;background:var(--${colour})"></i><span>${letter}${s.id}</span></div>`;
+  }).join('');
+}
+
+// --- Position --------------------------------------------------------------------------------------
+
+for (const button of $('modePick').querySelectorAll('button')) {
+  button.addEventListener('click', () => {
+    for (const other of $('modePick').querySelectorAll('button')) other.classList.toggle('on', other === button);
+    $('surveyForm').hidden = button.dataset.mode !== 'survey';
+    $('fixedForm').hidden = button.dataset.mode !== 'fixed';
   });
 }
 
-function submitMode(form, mode) {
-  form.addEventListener('submit', async event => {
+async function post(path, body, noteId) {
+  show(noteId, 'Working...');
+  try {
+    const response = await fetch(path, { method: 'POST', headers: body ? FORM : HEADERS, body });
+    show(noteId, (await response.json()).message);
+    return response.ok;
+  } catch (e) {
+    show(noteId, 'No answer from the device.');
+    return false;
+  }
+}
+
+for (const [form, mode] of [[$('surveyForm'), 'survey'], [$('fixedForm'), 'fixed']]) {
+  form.addEventListener('submit', event => {
     event.preventDefault();
     const data = new FormData(form);
     data.set('mode', mode);
-    const response = await fetch('/api/mode', { method: 'POST', headers: { ...headers, 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams(data).toString() });
-    show('modeNote', (await response.json()).message);
+    post('/api/mode', new URLSearchParams(data).toString(), 'modeNote');
   });
 }
-submitMode($('surveyForm'), 'survey');
-submitMode($('fixedForm'), 'fixed');
 
-// The answer goes right under the button, because a refusal says what to fix
+$('useCurrent').addEventListener('click', () => {
+  if (!state || !state.have_position) return;
+  const form = $('fixedForm');
+  form.lat.value = state.lat.toFixed(9);
+  form.lon.value = state.lon.toFixed(9);
+  form.height.value = state.height_m.toFixed(4);
+  show('modeNote', `Filled in. The module's estimate is good to ${meters(state.accuracy_m)}. Press Set position to use it.`);
+});
+
+// --- Settings --------------------------------------------------------------------------------------
+
 $('settingsForm').addEventListener('submit', async event => {
   event.preventDefault();
-  show('settingsNote', 'Saving...');
-  try {
-    const body = new URLSearchParams(new FormData(event.target)).toString();
-    const response = await fetch('/api/settings', { method: 'POST', headers: { ...headers, 'Content-Type': 'application/x-www-form-urlencoded' }, body });
-    show('settingsNote', (await response.json()).message);
-    if (response.ok) show('stateText', 'Restarting...');
-  } catch (e) {
-    show('settingsNote', 'No answer from the device. If it restarted, it is joining your WiFi now.');
+  const saved = await post('/api/settings', new URLSearchParams(new FormData(event.target)).toString(), 'settingsNote');
+  if (saved && state && state.setup_needed) {
+    show('settingsNote', 'Saved. It is restarting and joining your WiFi, and this setup network will go away. Find it in your router\'s list of devices as gps-base.');
   }
 });
 
-$('restart').addEventListener('click', async () => {
-  const response = await fetch('/api/restart', { method: 'POST', headers });
-  show('note', (await response.json()).message);
-});
-
-$('checkUpdate').addEventListener('click', async () => {
-  const response = await fetch('/api/update/check', { method: 'POST', headers });
-  show('note', (await response.json()).message);
-});
-
-$('upload').addEventListener('click', async () => {
-  const file = $('firmware').files[0];
-  if (!file) return show('note', 'Choose a firmware file first.');
-  show('note', 'Uploading...');
-  const response = await fetch('/api/firmware', { method: 'POST', headers, body: file });
-  show('note', (await response.json()).message);
-});
-
 fetch('/api/settings').then(r => r.json()).then(s => {
+  settings = s;
   const form = $('settingsForm');
-  form.wifi_ssid.value = s.wifi_ssid;
-  form.ntrip_host.value = s.ntrip_host;
-  form.ntrip_port.value = s.ntrip_port;
-  form.ntrip_mount.value = s.ntrip_mount;
-  form.mqtt_host.value = s.mqtt_host;
-  form.mqtt_port.value = s.mqtt_port;
-  form.mqtt_user.value = s.mqtt_user;
+  for (const name of ['wifi_ssid', 'ntrip_host', 'ntrip_port', 'ntrip_mount', 'mqtt_host', 'mqtt_port', 'mqtt_user']) form[name].value = s[name];
   form.auto_update.checked = s.auto_update;
+  show('autoUpdate', s.auto_update ? 'Installs new releases from the monitoring service by itself.' : 'Automatic updates are off. It installs only when you check here.');
 
   // Nothing is saved yet on a new device, so there is nothing to keep unchanged
   if (!s.wifi_ssid) form.wifi_password.placeholder = '';
@@ -272,8 +694,35 @@ fetch('/api/settings').then(r => r.json()).then(s => {
   }
 }).catch(() => {});
 
-refresh();
-setInterval(refresh, 1000);
+// --- Maintenance -----------------------------------------------------------------------------------
+
+$('checkUpdate').addEventListener('click', () => post('/api/update/check', null, 'updateNote'));
+$('restart').addEventListener('click', () => post('/api/restart', null, 'restartNote'));
+
+$('upload').addEventListener('click', () => {
+  const file = $('firmware').files[0];
+  if (!file) return show('uploadNote', 'Choose a firmware file first.');
+
+  const progress = $('uploadProgress');
+  progress.hidden = false;
+  progress.value = 0;
+  show('uploadNote', 'Uploading...');
+
+  const request = new XMLHttpRequest();
+  request.open('POST', '/api/firmware');
+  request.setRequestHeader('X-Requested-With', HEADERS['X-Requested-With']);
+  request.upload.onprogress = e => { if (e.lengthComputable) progress.value = e.loaded / e.total; };
+  request.onload = () => {
+    let message = `Failed (${request.status})`;
+    try { message = JSON.parse(request.responseText).message; } catch (e) { /* keep the HTTP status */ }
+    show('uploadNote', message);
+  };
+  request.onerror = () => show('uploadNote', 'The upload was cut off.');
+  request.send(file);
+});
+
+route();
+poll();
 </script>
 </body>
 </html>

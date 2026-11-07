@@ -59,6 +59,7 @@ a { color: var(--accent); }
       <dt>Corrections sent</dt><dd id="sent">-</dd>
       <dt>WiFi</dt><dd id="wifi">-</dd>
       <dt>Firmware</dt><dd id="version">-</dd>
+      <dt>Update</dt><dd id="update">-</dd>
     </dl>
   </section>
 
@@ -93,6 +94,11 @@ a { color: var(--accent); }
       <label>Caster port<input type="number" name="ntrip_port"></label>
       <label>Mountpoint<input type="text" name="ntrip_mount" autocomplete="off"></label>
       <label>Mountpoint password<input type="password" name="ntrip_password" autocomplete="new-password" placeholder="Unchanged"></label>
+      <label>Monitoring broker, empty to turn reporting off<input type="text" name="mqtt_host" autocomplete="off"></label>
+      <label>Broker port<input type="number" name="mqtt_port"></label>
+      <label>Broker user, if it needs one<input type="text" name="mqtt_user" autocomplete="off"></label>
+      <label>Broker password<input type="password" name="mqtt_password" autocomplete="new-password" placeholder="Unchanged"></label>
+      <label class="radio"><input type="checkbox" name="auto_update"> Install firmware updates automatically</label>
       <label>Password for this page, at least 8 characters<input type="password" name="ui_password" autocomplete="new-password" placeholder="Unchanged"></label>
       <button class="primary">Save and restart</button>
     </form>
@@ -102,6 +108,7 @@ a { color: var(--accent); }
     <h2>Maintenance</h2>
     <label>Firmware file (firmware.bin)<input type="file" id="firmware" accept=".bin"></label>
     <button id="upload">Update firmware</button>
+    <button id="checkUpdate">Check for update</button>
     <button id="restart">Restart</button>
     <p id="note"></p>
   </section>
@@ -173,6 +180,7 @@ function render(s) {
   show('sent', `${age(s.sent_age_ms)}, ${Math.round(s.bytes_sent / 1024)} KB`);
   show('wifi', s.address ? `${s.address}, ${s.rssi} dBm` : 'Not connected');
   show('version', s.version);
+  show('update', s.update_status || '-');
   show('modeNote', s.mode === 'fixed' ? `Currently fixed at ${s.fixed_position}` : `Currently using a survey: ${s.survey_setting_m} m, at least ${s.survey_setting_s} s`);
 
   $('setup').classList.toggle('hide', !s.setup_needed);
@@ -226,6 +234,11 @@ $('restart').addEventListener('click', async () => {
   show('note', (await response.json()).message);
 });
 
+$('checkUpdate').addEventListener('click', async () => {
+  const response = await fetch('/api/update/check', { method: 'POST', headers });
+  show('note', (await response.json()).message);
+});
+
 $('upload').addEventListener('click', async () => {
   const file = $('firmware').files[0];
   if (!file) return show('note', 'Choose a firmware file first.');
@@ -240,6 +253,10 @@ fetch('/api/settings').then(r => r.json()).then(s => {
   form.ntrip_host.value = s.ntrip_host;
   form.ntrip_port.value = s.ntrip_port;
   form.ntrip_mount.value = s.ntrip_mount;
+  form.mqtt_host.value = s.mqtt_host;
+  form.mqtt_port.value = s.mqtt_port;
+  form.mqtt_user.value = s.mqtt_user;
+  form.auto_update.checked = s.auto_update;
 }).catch(() => {});
 
 refresh();

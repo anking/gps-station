@@ -7,6 +7,7 @@
 #include "../src/core/caster.h"
 #include "../src/core/fixed_position.h"
 #include "../src/core/gnss_stream.h"
+#include "../src/core/update_policy.h"
 
 static int failures = 0;
 
@@ -222,12 +223,37 @@ static void test_not_configured(void)
     CHECK(strstr(json, "\"caster_message\":\"bad  quote    here\"") != NULL);
 }
 
+// --- Updates -----------------------------------------------------------------------------------
+
+static void test_update_policy(void)
+{
+    const char *us = "gps-base-station";
+
+    CHECK(update_decide(us, "1.1.0", us, "1.2.0", "", false) == UPDATE_INSTALL);
+
+    // The server can offer an older build, when someone pins it or activates it to roll back
+    CHECK(update_decide(us, "1.2.0", us, "1.1.0", "", true) == UPDATE_INSTALL);
+
+    CHECK(update_decide(us, "1.1.0", us, "1.1.0", "", false) == UPDATE_SKIP_SAME_VERSION);
+    CHECK(update_decide(us, "1.1.0", us, "1.1.0", "", true) == UPDATE_SKIP_SAME_VERSION);
+
+    // Never another device's firmware, even when asked for by id
+    CHECK(update_decide(us, "1.1.0", "SolarControlV2", "9.9.9", "", false) == UPDATE_REFUSE_WRONG_PROJECT);
+    CHECK(update_decide(us, "1.1.0", "SolarControlV2", "9.9.9", "", true) == UPDATE_REFUSE_WRONG_PROJECT);
+
+    // A release that rolled back is not installed again by itself, but a later one is, and it can be retried on purpose
+    CHECK(update_decide(us, "1.1.0", us, "1.2.0", "1.2.0", false) == UPDATE_REFUSE_FAILED_BEFORE);
+    CHECK(update_decide(us, "1.1.0", us, "1.2.1", "1.2.0", false) == UPDATE_INSTALL);
+    CHECK(update_decide(us, "1.1.0", us, "1.2.0", "1.2.0", true) == UPDATE_INSTALL);
+}
+
 int main(void)
 {
     test_fixed_position();
     test_stream();
     test_caster_protocol();
     test_not_configured();
+    test_update_policy();
 
     printf(failures ? "%d FAILED\n" : "all core tests passed\n", failures);
     return failures ? 1 : 0;

@@ -13,8 +13,10 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
+#include "mqtt_link.h"
 #include "net.h"
 #include "nvs_flash.h"
+#include "ota.h"
 #include "settings.h"
 #include "web.h"
 
@@ -22,6 +24,7 @@
 #define UART_TX_BUFFER 2048
 #define RESET_HOLD_MS 5000
 #define MARK_FIRMWARE_GOOD_AFTER_MS 60000
+#define MARK_FIRMWARE_GOOD_WITHOUT_NETWORK_MS (10 * 60 * 1000)
 
 static const char *TAG = "main";
 
@@ -115,8 +118,10 @@ static void base_task(void *arg)
 
         check_reset_button(now);
 
-        // A new firmware that keeps crashing before this point rolls back to the previous one by itself
-        if (!firmware_marked_good && now >= MARK_FIRMWARE_GOOD_AFTER_MS) {
+        // A new firmware that keeps crashing before this point rolls back to the previous one by itself. It should
+        // also show it can reach the network, or the next update could never arrive, but a WiFi outage is not its fault.
+        if (!firmware_marked_good && now >= MARK_FIRMWARE_GOOD_AFTER_MS
+            && (net_has_internet_path() || now >= MARK_FIRMWARE_GOOD_WITHOUT_NETWORK_MS)) {
             esp_ota_mark_app_valid_cancel_rollback();
             firmware_marked_good = true;
         }
@@ -154,4 +159,10 @@ void app_main(void)
     web_start(&base, base_lock, &settings);
 
     xTaskCreate(base_task, "base", 8192, NULL, 6, NULL);
+
+    // Not on the setup network: there is no way out to the internet from it
+    if (settings_complete(&settings)) {
+        ota_start(settings.auto_update);
+        mqtt_link_start(&base, base_lock, &settings);
+    }
 }

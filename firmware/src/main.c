@@ -1,4 +1,4 @@
-// GPS base station on an ESP32: a ZED-F9P on a UART, corrections to an NTRIP caster over WiFi, a small web UI.
+// GPS base station on an ESP32: a ZED-F9P on a UART, corrections to rovers and an NTRIP caster over WiFi, a small web UI.
 // The base station's logic is all in core/, this file connects it to the hardware.
 #include <string.h>
 
@@ -23,6 +23,7 @@
 #define UART_RX_BUFFER 8192
 #define UART_TX_BUFFER 2048
 #define RESET_HOLD_MS 5000
+#define DIRECT_PORT 2101    // The usual NTRIP port, which rovers on this network connect to
 #define MARK_FIRMWARE_GOOD_AFTER_MS 60000
 #define MARK_FIRMWARE_GOOD_WITHOUT_NETWORK_MS (10 * 60 * 1000)
 
@@ -154,7 +155,7 @@ void app_main(void)
     };
 
     base_lock = xSemaphoreCreateMutex();
-    base_init(&base, &hal, &settings.caster, &settings.mode);
+    base_init(&base, &hal, &settings.caster, &settings.mode, DIRECT_PORT);
 
     web_start(&base, base_lock, &settings);
 

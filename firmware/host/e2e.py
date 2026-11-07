@@ -88,6 +88,69 @@ class Caster:
         self.drop_all()
 
 
+def free_port():
+    with socket.create_server(("127.0.0.1", 0)) as server:
+        return server.getsockname()[1]
+
+
+class Rover:
+    """Connects to the base directly, the way the mower does, and keeps what it receives."""
+
+    def __init__(self, port, request=b"GET /base HTTP/1.0\r\nUser-Agent: NTRIP test\r\nAccept: */*\r\nConnection: close\r\n\r\n"):
+        deadline = time.monotonic() + 10
+        while True:
+            try:
+                self.sock = socket.create_connection(("127.0.0.1", port), timeout=5)
+                break
+            except OSError:
+                if time.monotonic() > deadline:
+                    raise
+                time.sleep(0.1)
+        self.received = bytearray()
+        self.hung_up = False
+        if request:
+            self.sock.sendall(request)
+        threading.Thread(target=self._read, daemon=True).start()
+
+    def _read(self):
+        self.sock.settimeout(None)
+        try:
+            while True:
+                chunk = self.sock.recv(4096)
+                if not chunk:
+                    break
+                self.received.extend(chunk)
+        except OSError:
+            pass
+        self.hung_up = True
+
+    @property
+    def stream(self):
+        return bytes(self.received)[len(STREAM_REPLY):]
+
+    def close(self):
+        try:
+            self.sock.shutdown(socket.SHUT_RDWR)
+        except OSError:
+            pass
+        self.sock.close()
+
+
+STREAM_REPLY = b"ICY 200 OK\r\n\r\n"
+
+
+def complete_frames(data):
+    """The part of data that ends on a frame boundary, because a read can stop part way through a frame."""
+    data = bytes(data)
+    end = 0
+    while end + 3 <= len(data):
+        frame_end = end + (((data[end + 1] & 3) << 8) | data[end + 2]) + 6
+        if frame_end > len(data):
+            break
+        end = frame_end
+    return data[:end]
+
+
 class Base:
     def __init__(self, sim, caster, *args):
         self.lines = []
@@ -344,12 +407,133 @@ def unconfigured_never_connects():
         check("NTRIP_NOT_CONFIGURED" in line, f"status {line}")
         time.sleep(2)
         check(len(caster.attempt_times) == 0, "must not connect")
-        check(len(sim.commands) == 0, "must not touch the module")
     finally:
         process.kill(), process.wait(), sim.close(), caster.close()
 
 
+def rover_gets_whole_frames_alongside_the_caster():
+    caster, sim, port = Caster(), F9pSim(survey_seconds=1), free_port()
+    base = Base(sim, caster, "--survey", "3000:1", "--direct-port", str(port))
+    rover = Rover(port)
+    try:
+        wait_for(lambda: bytes(rover.received).startswith(STREAM_REPLY), 5, "the reply to the rover")
+        wait_for(lambda: base.status.get("direct_rovers") == 1, 3, "the rover in the status")
+        check(base.status["direct_port"] == port, f"port in the status {base.status}")
+        wait_for(lambda: len(rover.stream) > 400, 15, "corrections at the rover")
+        wait_for(lambda: len(caster.received) > 400, 10, "corrections at the caster as well")
+        frames = complete_frames(rover.stream)
+        check(len(frames) > 0 and whole_frames(frames), "the rover must receive whole, valid frames")
+        check(base.status["errors"] == [], f"errors {base.status}")
+
+        rover.close()
+        wait_for(lambda: base.status.get("direct_rovers") == 0, 3, "the rover leaving")
+        before = len(caster.received)
+        wait_for(lambda: len(caster.received) > before + 200, 10, "the caster unaffected")
+
+        again = Rover(port)
+        wait_for(lambda: len(again.stream) > 200, 10, "a rover coming back")
+        again.close()
+    finally:
+        rover.close(), base.stop(), sim.close(), caster.close()
+
+
+def rover_is_served_with_no_caster_set_up():
+    caster, sim, port = Caster(), F9pSim(survey_seconds=1), free_port()
+    process = subprocess.Popen([HOST, "--serial", sim.path, "--host", "127.0.0.1", "--port", str(caster.port), "--mount", "", "--password", "",
+                                "--survey", "3000:1", "--direct-port", str(port)],
+                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    rover = Rover(port)
+    try:
+        wait_for(lambda: len(rover.stream) > 400, 15, "corrections at the rover")
+        frames = complete_frames(rover.stream)
+        check(len(frames) > 0 and whole_frames(frames), "whole frames")
+        check(len(caster.attempt_times) == 0, "must not connect to the caster")
+    finally:
+        rover.close(), process.kill(), process.wait(), sim.close(), caster.close()
+
+
+def rover_carries_on_when_the_caster_refuses():
+    caster, sim, port = Caster(reply=b"ERROR - Bad Password\r\n"), F9pSim(survey_seconds=1), free_port()
+    base = Base(sim, caster, "--survey", "3000:1", "--direct-port", str(port))
+    rover = Rover(port)
+    try:
+        wait_for(lambda: "NTRIP_CONNECTION_ERROR" in base.status.get("errors", []), 15, "the caster refusing")
+        before = len(rover.stream)
+        wait_for(lambda: len(rover.stream) > before + 300, 10, "corrections at the rover regardless")
+        check(base.status["direct_rovers"] == 1, f"still connected {base.status}")
+    finally:
+        rover.close(), base.stop(), sim.close(), caster.close()
+
+
+def rover_stays_connected_through_a_module_power_cycle():
+    caster, sim, port = Caster(), F9pSim(survey_seconds=1), free_port()
+    base = Base(sim, caster, "--survey", "3000:1", "--direct-port", str(port))
+    rover = Rover(port)
+    try:
+        wait_for(lambda: len(rover.stream) > 0, 15, "corrections")
+        sim.silent = True
+        sim.power_cycle()
+        wait_for(lambda: base.status.get("phase") == "finding_module", 10, "noticing the silence")
+        check(not rover.hung_up, "the rover's connection has done nothing wrong")
+        sim.silent = False
+        before = len(rover.stream)
+        wait_for(lambda: len(rover.stream) > before + 200, 45, "corrections again, with no reconnect")
+    finally:
+        rover.close(), base.stop(), sim.close(), caster.close()
+
+
+def a_new_rover_takes_the_place_of_the_oldest():
+    caster, sim, port = Caster(), F9pSim(survey_seconds=1), free_port()
+    base = Base(sim, caster, "--survey", "3000:1", "--direct-port", str(port))
+    first = Rover(port)
+    second, third = None, None
+    try:
+        wait_for(lambda: base.status.get("direct_rovers") == 1, 5, "the first rover")
+        time.sleep(0.1)
+        second = Rover(port)
+        wait_for(lambda: base.status.get("direct_rovers") == 2, 5, "the second rover")
+        time.sleep(0.1)
+        third = Rover(port)
+        wait_for(lambda: first.hung_up, 5, "the oldest rover dropped")
+        wait_for(lambda: bytes(third.received).startswith(STREAM_REPLY), 5, "the newest rover answered")
+        check(not second.hung_up, "only the oldest goes")
+    finally:
+        for rover in (first, second, third):
+            if rover:
+                rover.close()
+        base.stop(), sim.close(), caster.close()
+
+
+def anything_else_is_turned_away():
+    caster, sim, port = Caster(), F9pSim(survey_seconds=1), free_port()
+    base = Base(sim, caster, "--survey", "3000:1", "--direct-port", str(port))
+    rovers = []
+    try:
+        # One at a time, because a new connection can take the place of the oldest
+        for request, reply in ((b"GET / HTTP/1.0\r\n\r\n", b"HTTP/1.0 400"), (b"SOURCE secret /base\r\n\r\n", b"HTTP/1.0 400"), (b"X" * 400, b"")):
+            rover = Rover(port, request=request)
+            rovers.append(rover)
+            wait_for(lambda: rover.hung_up, 5, f"{request[:20]!r} closed")
+            check(bytes(rover.received).startswith(reply), f"reply to {request[:20]!r}: {bytes(rover.received)!r}")
+            check(STREAM_REPLY not in bytes(rover.received), "no corrections for it")
+        silent = Rover(port, request=b"")
+        rovers.append(silent)
+        wait_for(lambda: silent.hung_up, 10, "a connection that says nothing closed")
+        check(not silent.received, "nothing sent before it asks")
+        check(base.status.get("direct_rovers") == 0, f"status {base.status}")
+    finally:
+        for rover in rovers:
+            rover.close()
+        base.stop(), sim.close(), caster.close()
+
+
 SCENARIOS = [
+    rover_gets_whole_frames_alongside_the_caster,
+    rover_is_served_with_no_caster_set_up,
+    rover_carries_on_when_the_caster_refuses,
+    rover_stays_connected_through_a_module_power_cycle,
+    a_new_rover_takes_the_place_of_the_oldest,
+    anything_else_is_turned_away,
     survey_then_upload,
     fixed_from_start_skips_the_survey,
     switch_to_fixed_while_running,

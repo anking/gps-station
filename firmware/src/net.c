@@ -112,6 +112,10 @@ void net_start(const settings_t *settings)
 
     ESP_ERROR_CHECK(esp_wifi_start());
     esp_wifi_set_ps(WIFI_PS_NONE); // Corrections should not wait for a power-save wake-up
+
+#ifdef WIFI_MAX_TX_POWER
+    esp_wifi_set_max_tx_power(WIFI_MAX_TX_POWER);
+#endif
 }
 
 bool net_has_internet_path(void)

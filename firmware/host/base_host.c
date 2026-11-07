@@ -1,5 +1,5 @@
 // Runs the base station core on a PC against a serial port or pseudo terminal, for testing without an ESP32.
-//   base_host --serial /dev/pts/N --host H --port P --mount M --password PW [--survey ACCURACY_MM:SECONDS] [--fixed LAT:LON:HEIGHT]
+//   base_host --serial /dev/pts/N --host H --port P --mount M --password PW [--direct-port P] [--survey ACCURACY_MM:SECONDS] [--fixed LAT:LON:HEIGHT]
 // Prints the status as a JSON line twice a second. Reads commands from stdin:
 //   SURVEY <accuracy_mm> <seconds>
 //   FIXED <latitude> <longitude> <height>
@@ -54,12 +54,14 @@ int main(int argc, char **argv)
     base_caster_settings_t settings = { .port = 2101 };
     base_mode_t mode = { .kind = BASE_MODE_SURVEY, .survey_accuracy_mm = 3000, .survey_seconds = 60 };
     const char *serial = NULL;
+    uint16_t direct_port = 0;
 
     for (int i = 1; i + 1 < argc; i += 2) {
         const char *value = argv[i + 1];
         if (!strcmp(argv[i], "--serial")) serial = value;
         else if (!strcmp(argv[i], "--host")) snprintf(settings.host, sizeof(settings.host), "%s", value);
         else if (!strcmp(argv[i], "--port")) settings.port = (uint16_t)atoi(value);
+        else if (!strcmp(argv[i], "--direct-port")) direct_port = (uint16_t)atoi(value);
         else if (!strcmp(argv[i], "--mount")) snprintf(settings.mountpoint, sizeof(settings.mountpoint), "%s", value);
         else if (!strcmp(argv[i], "--password")) snprintf(settings.password, sizeof(settings.password), "%s", value);
         else if (!strcmp(argv[i], "--survey")) sscanf(value, "%u:%u", &mode.survey_accuracy_mm, &mode.survey_seconds);
@@ -95,7 +97,7 @@ int main(int argc, char **argv)
         .network_ready = network_ready,
         .mode_changed = mode_changed,
     };
-    base_init(&base, &hal, &settings, &mode);
+    base_init(&base, &hal, &settings, &mode, direct_port);
 
     fcntl(STDIN_FILENO, F_SETFL, fcntl(STDIN_FILENO, F_GETFL, 0) | O_NONBLOCK);
 

@@ -261,16 +261,19 @@ static void test_page_data(void)
     uint8_t position[36] = { 0 };
     put_le32(position + 8, 1512093000);     // longitude, 1e-7 degrees
     put_le32(position + 12, -338688000);    // latitude
-    put_le32(position + 16, 58500);         // height, mm
+    put_le32(position + 16, 58500);         // height above the ellipsoid, mm
+    put_le32(position + 20, 36400);         // above sea level, mm: the geoid is 22 m above the ellipsoid in Sydney
     position[24] = 7;                       // longitude, 1e-9
     position[25] = (uint8_t)(int8_t)-12;    // latitude, 1e-9
     position[26] = 3;                       // height, 0.1 mm
+    position[27] = (uint8_t)(int8_t)-2;     // above sea level, 0.1 mm
     feed_ubx(&base, UBX_NAV_HPPOSLLH, position, sizeof(position));
 
     int length = base_status_json(&base, json, sizeof(json));
     CHECK(strstr(json, "\"lat\":-33.868800012,") != NULL);
     CHECK(strstr(json, "\"lon\":151.209300007,") != NULL);
     CHECK(strstr(json, "\"height_m\":58.5003,") != NULL);
+    CHECK(strstr(json, "\"height_msl_m\":36.3998,") != NULL);
 
     // The web page and MQTT each keep a margin after the status for what they add
     CHECK(length > 0 && length < 1100);

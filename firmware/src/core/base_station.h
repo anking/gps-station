@@ -107,6 +107,10 @@ typedef struct {
     int8_t latitude_hp;     // 1e-9 degrees, so the position can be copied into a fixed one without losing anything
     int8_t longitude_hp;
     int8_t height_hp;       // 0.1 mm
+    // Above mean sea level, by the module's own geoid model. Only for showing: a fixed position needs the ellipsoid
+    // height, and the difference between the two is how a height above sea level is turned into one.
+    int32_t height_msl_mm;
+    int8_t height_msl_hp;
     uint32_t horizontal_accuracy_tenth_mm;
     uint8_t satellites;
     uint8_t fix_type;

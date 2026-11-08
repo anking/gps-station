@@ -233,6 +233,7 @@ def survey_then_upload():
         wait_for(lambda: base.status.get("have_position"), 5, "position")
         check(abs(base.status["lat"] - 40.1234567) < 1e-6, f"latitude {base.status}")
         check(base.status["height_m"] == 300.0, f"height in meters {base.status}")
+        check(base.status["height_msl_m"] == 266.0, f"height above sea level {base.status}")
         check(base.status["accuracy_m"] == 1.4, f"accuracy in meters {base.status}")
         check(base.status["satellites"] == 24, f"satellites {base.status}")
         check(base.status["caster_connected"] is True, f"connected {base.status}")

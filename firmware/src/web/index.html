@@ -80,6 +80,14 @@ legend { font-weight: 600; font-size: 14px; margin-bottom: 8px; padding: 0; }
 .segmented button { border: 0; background: transparent; padding: 6px 14px; border-radius: 7px; color: var(--quiet); }
 .segmented button.on { background: var(--card); color: var(--text); box-shadow: 0 1px 2px rgba(0,0,0,.12); }
 #map { height: calc(100vh - 230px); min-height: 320px; border-radius: 12px; border: 1px solid var(--line); background: var(--raised); z-index: 0; }
+#pickMap { height: 340px; border-radius: 10px; border: 1px solid var(--line); background: var(--raised); margin: 0 0 6px; z-index: 0; }
+.pin-mark { position: relative; width: 26px; height: 26px; border-radius: 50%; background: rgba(229, 83, 61, .22); border: 2px solid #e5533d; box-shadow: 0 1px 5px rgba(0,0,0,.45); cursor: grab; }
+.pin-mark::after { content: ''; position: absolute; left: 50%; top: 50%; width: 6px; height: 6px; margin: -3px 0 0 -3px; border-radius: 50%; background: #e5533d; }
+.two { display: grid; grid-template-columns: 1fr 1fr; gap: 0 12px; }
+@media (max-width: 520px) { .two { grid-template-columns: 1fr; } }
+details.explain { margin: 2px 0 12px; font-size: 13px; color: var(--quiet); }
+details.explain summary { cursor: pointer; color: var(--accent); margin-bottom: 4px; }
+details.explain p { margin: 6px 0 0; }
 .toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 12px; }
 .toolbar .segmented { margin: 0; }
 .toolbar .grow { flex: 1; min-width: 160px; font-size: 13px; color: var(--quiet); }
@@ -218,12 +226,30 @@ progress { width: 100%; height: 8px; margin-top: 10px; accent-color: var(--accen
         <button class="primary">Start survey</button>
       </form>
       <form id="fixedForm" hidden>
-        <p class="hint" style="margin:0 0 12px">Use a measured position so rover positions stay the same from day to day. The antenna must not move afterwards. Heights are above the ellipsoid, not sea level.</p>
-        <label>Latitude, degrees<input type="text" inputmode="decimal" name="lat" autocomplete="off"></label>
-        <label>Longitude, degrees<input type="text" inputmode="decimal" name="lon" autocomplete="off"></label>
-        <label>Height above the ellipsoid, meters<input type="text" inputmode="decimal" name="height" autocomplete="off"></label>
-        <div class="buttons" style="margin-top:0"><button class="primary">Set position</button><button type="button" id="useCurrent">Use the current position</button></div>
-        <p class="hint" id="useCurrentHint">Fills in where the module is now. Only worth it after a long survey, or the base keeps that error for good.</p>
+        <p class="hint" style="margin:0 0 12px">A fixed position keeps rover positions the same from day to day. The antenna must not move afterwards.</p>
+        <div id="pickMap"></div>
+        <p class="hint" id="pickNote" style="margin:0 0 12px"></p>
+        <div class="two">
+          <label>Latitude, degrees<input type="text" inputmode="decimal" name="lat" autocomplete="off"></label>
+          <label>Longitude, degrees<input type="text" inputmode="decimal" name="lon" autocomplete="off"></label>
+        </div>
+        <div class="two">
+          <label>Height above the ellipsoid, meters<input type="text" inputmode="decimal" name="height" autocomplete="off"></label>
+          <label>or above sea level, meters<input type="text" inputmode="decimal" id="heightSea" autocomplete="off"></label>
+        </div>
+        <p class="hint" id="heightHint" style="margin:-4px 0 6px"></p>
+        <details class="explain">
+          <summary>What is height above the ellipsoid?</summary>
+          <p>GPS measures height from the ellipsoid: a smooth, slightly flattened shape the size of the Earth. Sea level is lumpier, and differs from it by tens of meters depending on where you are. The module needs the height above the ellipsoid.</p>
+          <p>The height a survey finds, shown on the Overview as Height (ellipsoid), is already that kind: use it as it is, or press Use the current height while the base is surveyed. A height from a map, a sign or a phone is above sea level: put it in the second box, and it is turned into the first.</p>
+          <p>A height a few meters out matters far less than the position: it moves the rovers' heights, not where they are on the ground.</p>
+        </details>
+        <div class="buttons" style="margin-top:0">
+          <button class="primary">Set position</button>
+          <button type="button" id="useCurrent">Use the current position</button>
+          <button type="button" id="useHeight">Use the current height</button>
+        </div>
+        <p class="hint" id="useCurrentHint">The current position is where the module says it is now. It is only worth keeping after a long survey, or the base keeps that error for good.</p>
       </form>
       <p class="note" id="modeNote"></p>
     </div>
@@ -356,6 +382,10 @@ function route() {
   $('tab-' + page).scrollIntoView({ block: 'nearest', inline: 'nearest' });
   if (page === 'map') openMap();
   if (page === 'sky') loadSky();
+  if (page === 'position') {
+    showPositionOnce();
+    if (!fixedForm.hidden) openPickMap();
+  }
 }
 window.addEventListener('hashchange', route);
 
@@ -457,6 +487,11 @@ function render(s) {
   const modeText = s.mode === 'fixed' ? `Fixed at ${s.fixed_position}` : `Survey, to ${s.survey_setting_m} m in at least ${s.survey_setting_s} s`;
   show('mode', s.mode === 'fixed' ? 'Fixed' : 'Survey');
   show('modeNow', modeText);
+  if (page === 'position') {
+    showHeightHint();
+    if (!$('heightSea').value && fixedForm.height.value) syncSea();
+    refreshPickMap();
+  }
 
   // Survey
   const surveying = s.phase === 'surveying';
@@ -506,16 +541,18 @@ async function copy(text) {
 
 // --- Map: the library comes from this board, only the imagery from the internet --------------------
 
-let map = null, base = null, accuracyCircle = null, centred = false, loading = false;
+let map = null, base = null, accuracyCircle = null, centred = false;
 const layers = {};
 
-function openMap() {
-  if (map) {
-    map.invalidateSize();
-    return;
-  }
-  if (loading) return;
-  loading = true;
+// The library is loaded once, the first time a map is wanted, whichever page wants it
+let leaflet = 'none';
+const leafletWaiting = [];
+
+function withLeaflet(ready, failed) {
+  if (leaflet === 'ready') return ready();
+  leafletWaiting.push({ ready, failed });
+  if (leaflet === 'loading') return;
+  leaflet = 'loading';
 
   const css = document.createElement('link');
   css.rel = 'stylesheet';
@@ -524,17 +561,30 @@ function openMap() {
 
   const script = document.createElement('script');
   script.src = '/leaflet-1.9.4.js';
-  script.onload = startMap;
-  script.onerror = () => { loading = false; show('mapNote', 'The map could not be loaded from the device.'); };
+  script.onload = () => { leaflet = 'ready'; for (const w of leafletWaiting.splice(0)) w.ready(); };
+  script.onerror = () => { leaflet = 'none'; script.remove(); for (const w of leafletWaiting.splice(0)) w.failed(); };
   document.head.appendChild(script);
 }
 
+// Each map needs layers of its own
+const satellite = () => L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+  { maxZoom: 22, maxNativeZoom: 19, attribution: 'Imagery &copy; Esri' });
+const street = () => L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+  { maxZoom: 22, maxNativeZoom: 19, attribution: '&copy; OpenStreetMap contributors' });
+
+function openMap() {
+  if (map) {
+    map.invalidateSize();
+    return;
+  }
+  withLeaflet(startMap, () => show('mapNote', 'The map could not be loaded from the device.'));
+}
+
 function startMap() {
+  if (map) return;
   map = L.map('map', { zoomControl: true }).setView([20, 0], 2);
-  layers.satellite = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-    { maxZoom: 22, maxNativeZoom: 19, attribution: 'Imagery &copy; Esri' });
-  layers.street = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-    { maxZoom: 22, maxNativeZoom: 19, attribution: '&copy; OpenStreetMap contributors' });
+  layers.satellite = satellite();
+  layers.street = street();
   for (const layer of Object.values(layers)) {
     layer.on('tileerror', () => show('mapNote', 'The map imagery needs internet on this phone or computer. The base is still marked.'));
   }
@@ -630,12 +680,171 @@ function drawSky(data) {
 
 // --- Position --------------------------------------------------------------------------------------
 
+const fixedForm = $('fixedForm');
+
+function pickMode(mode) {
+  for (const button of $('modePick').querySelectorAll('button')) button.classList.toggle('on', button.dataset.mode === mode);
+  $('surveyForm').hidden = mode !== 'survey';
+  fixedForm.hidden = mode !== 'fixed';
+  if (mode === 'fixed' && page === 'position') openPickMap();
+}
+
 for (const button of $('modePick').querySelectorAll('button')) {
-  button.addEventListener('click', () => {
-    for (const other of $('modePick').querySelectorAll('button')) other.classList.toggle('on', other === button);
-    $('surveyForm').hidden = button.dataset.mode !== 'survey';
-    $('fixedForm').hidden = button.dataset.mode !== 'fixed';
+  button.addEventListener('click', () => pickMode(button.dataset.mode));
+}
+
+// The position in use, from "latitude:longitude:height" as it was entered, or null
+function fixedInUse() {
+  if (!state || state.mode !== 'fixed' || !state.fixed_position) return null;
+  const [lat, lon, height] = state.fixed_position.split(':').map(Number);
+  return [lat, lon, height].every(Number.isFinite) ? { lat, lon, height } : null;
+}
+
+// Opens on the base's own mode, with the fixed position in use filled in, once
+let positionShown = false;
+function showPositionOnce() {
+  if (positionShown || !state) return;
+  positionShown = true;
+  const inUse = fixedInUse();
+  if (inUse) {
+    fixedForm.lat.value = inUse.lat;
+    fixedForm.lon.value = inUse.lon;
+    fixedForm.height.value = inUse.height;
+    syncSea();
+  }
+  pickMode(state.mode === 'fixed' ? 'fixed' : 'survey');
+}
+
+// How much higher a height above the ellipsoid is than the same place's height above sea level, here, or null
+function separation() {
+  if (!state || !state.have_position || typeof state.height_msl_m !== 'number') return null;
+  return state.height_m - state.height_msl_m;
+}
+
+const decimal = text => (/^\s*-?\d+(\.\d+)?\s*$/.test(text) ? Number(text) : null);
+
+function syncSea() {
+  const n = separation(), h = decimal(fixedForm.height.value);
+  $('heightSea').value = n !== null && h !== null ? (h - n).toFixed(3) : '';
+}
+
+function showHeightHint() {
+  const n = separation();
+  show('heightHint', n === null
+    ? 'Once the module has a position, a height above sea level can be turned into one above the ellipsoid here.'
+    : `Here, a height above the ellipsoid is ${Math.abs(n).toFixed(1)} m ${n < 0 ? 'less' : 'more'} than the same height above sea level.`);
+}
+
+fixedForm.height.addEventListener('input', syncSea);
+$('heightSea').addEventListener('input', () => {
+  const n = separation(), sea = decimal($('heightSea').value);
+  if (n !== null && sea !== null) fixedForm.height.value = (sea + n).toFixed(3);
+});
+
+// The map to put the base on: tap it, or drag the pin. The blue dot is where the module says it is.
+let pickMap = null, pin = null, moduleDot = null, moduleCircle = null, inUseDot = null, pickCentred = false;
+
+function openPickMap() {
+  if (pickMap) {
+    pickMap.invalidateSize();
+    refreshPickMap();
+    return;
+  }
+  withLeaflet(() => {
+    if (pickMap) return;
+    // In the middle of a form the wheel is for scrolling the page, until the map is tapped
+    pickMap = L.map('pickMap', { zoomControl: true, scrollWheelZoom: false }).setView([20, 0], 2);
+    satellite().addTo(pickMap);
+    pickMap.on('mouseout', () => pickMap.scrollWheelZoom.disable());
+    pickMap.on('click', event => {
+      pickMap.scrollWheelZoom.enable();
+      const point = event.latlng.wrap();
+      placePin(point.lat, point.lng);
+      fillLatLon(point.lat, point.lng);
+    });
+    refreshPickMap();
+  }, () => show('pickNote', 'The map could not be loaded from the device. The boxes below still work.'));
+}
+
+function placePin(lat, lon) {
+  if (!pickMap) return;
+  if (!pin) {
+    const icon = L.divIcon({ className: '', html: '<div class="pin-mark"></div>', iconSize: [26, 26], iconAnchor: [13, 13] });
+    pin = L.marker([lat, lon], { draggable: true, icon, zIndexOffset: 1000, title: 'Drag to where the antenna is' }).addTo(pickMap);
+    pin.on('drag dragend', () => {
+      const point = pin.getLatLng().wrap();
+      fillLatLon(point.lat, point.lng);
+    });
+  }
+  pin.setLatLng([lat, lon]);
+  showDistance();
+}
+
+function fillLatLon(lat, lon) {
+  fixedForm.lat.value = lat.toFixed(8);
+  fixedForm.lon.value = lon.toFixed(8);
+  showDistance();
+}
+
+// Metres between two points this close, on a sphere
+function metresBetween(a, b) {
+  const rad = Math.PI / 180, r = 6371000;
+  const dn = (b[0] - a[0]) * rad * r, de = (b[1] - a[1]) * rad * r * Math.cos(a[0] * rad);
+  return Math.hypot(dn, de);
+}
+
+function showDistance() {
+  const lat = decimal(fixedForm.lat.value), lon = decimal(fixedForm.lon.value);
+  if (lat === null || lon === null || !state || !state.have_position) {
+    show('pickNote', 'Tap the map where the antenna is, or drag the red pin. Zoom right in: the satellite imagery itself can be a meter or so out.');
+    return;
+  }
+  const d = metresBetween([state.lat, state.lon], [lat, lon]);
+  show('pickNote', d < 5
+    ? `The pin is ${meters(d)} from where the module says it is (the blue dot).`
+    : `The pin is ${meters(d)} from where the module says it is (the blue dot). Rovers then read their positions that far out as well, and many meters off can make RTK fixed harder for them to reach.`);
+}
+
+for (const name of ['lat', 'lon']) {
+  fixedForm[name].addEventListener('input', () => {
+    const lat = decimal(fixedForm.lat.value), lon = decimal(fixedForm.lon.value);
+    if (lat !== null && lon !== null && Math.abs(lat) <= 90 && Math.abs(lon) <= 180) placePin(lat, lon);
+    else showDistance();
   });
+}
+
+// The module's dot, the position in use, and on the first look, the view
+function refreshPickMap() {
+  if (!pickMap || !state) return;
+  if (state.have_position) {
+    const point = [state.lat, state.lon], radius = Math.max(state.accuracy_m, 0.05);
+    if (!moduleDot) {
+      moduleCircle = L.circle(point, { radius, color: '#2f7de1', weight: 1, fillOpacity: 0.12, interactive: false }).addTo(pickMap);
+      moduleDot = L.circleMarker(point, { radius: 6, color: '#fff', weight: 2, fillColor: '#1f63d6', fillOpacity: 1 }).addTo(pickMap)
+        .bindTooltip('Where the module says it is');
+    } else {
+      moduleDot.setLatLng(point);
+      moduleCircle.setLatLng(point).setRadius(radius);
+    }
+  }
+  const inUse = fixedInUse();
+  if (inUse && !inUseDot) {
+    inUseDot = L.circleMarker([inUse.lat, inUse.lon], { radius: 5, color: '#12804a', weight: 2, fillOpacity: 0 }).addTo(pickMap)
+      .bindTooltip('The fixed position in use');
+  } else if (inUse) {
+    inUseDot.setLatLng([inUse.lat, inUse.lon]);
+  }
+
+  const lat = decimal(fixedForm.lat.value), lon = decimal(fixedForm.lon.value);
+  if (lat !== null && lon !== null) placePin(lat, lon);
+  if (!pickCentred) {
+    const centre = lat !== null && lon !== null ? [lat, lon] : state.have_position ? [state.lat, state.lon] : null;
+    if (centre) {
+      pickMap.setView(centre, 20);
+      pickCentred = true;
+    }
+  }
+  showDistance();
 }
 
 async function post(path, body, noteId) {
@@ -660,12 +869,20 @@ for (const [form, mode] of [[$('surveyForm'), 'survey'], [$('fixedForm'), 'fixed
 }
 
 $('useCurrent').addEventListener('click', () => {
-  if (!state || !state.have_position) return;
-  const form = $('fixedForm');
-  form.lat.value = state.lat.toFixed(9);
-  form.lon.value = state.lon.toFixed(9);
-  form.height.value = state.height_m.toFixed(4);
+  if (!state || !state.have_position) return show('modeNote', 'The module has no position yet.');
+  fixedForm.lat.value = state.lat.toFixed(9);
+  fixedForm.lon.value = state.lon.toFixed(9);
+  fixedForm.height.value = state.height_m.toFixed(4);
+  syncSea();
+  placePin(state.lat, state.lon);
   show('modeNote', `Filled in. The module's estimate is good to ${meters(state.accuracy_m)}. Press Set position to use it.`);
+});
+
+$('useHeight').addEventListener('click', () => {
+  if (!state || !state.have_position) return show('modeNote', 'The module has no position yet.');
+  fixedForm.height.value = state.height_m.toFixed(4);
+  syncSea();
+  show('modeNote', `Height filled in: ${state.height_m.toFixed(2)} m above the ellipsoid, ${state.height_msl_m.toFixed(2)} m above sea level.`);
 });
 
 // --- Settings --------------------------------------------------------------------------------------

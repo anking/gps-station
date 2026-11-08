@@ -130,9 +130,11 @@ static void on_ubx(void *ctx, uint8_t cls, uint8_t id, const uint8_t *payload, u
         base->longitude_e7 = (int32_t)u32_le(payload + 8);
         base->latitude_e7 = (int32_t)u32_le(payload + 12);
         base->height_mm = (int32_t)u32_le(payload + 16);
+        base->height_msl_mm = (int32_t)u32_le(payload + 20);
         base->longitude_hp = (int8_t)payload[24];
         base->latitude_hp = (int8_t)payload[25];
         base->height_hp = (int8_t)payload[26];
+        base->height_msl_hp = (int8_t)payload[27];
         base->horizontal_accuracy_tenth_mm = u32_le(payload + 28);
         base->have_position = true;
     } else if (id == UBX_NAV_SVIN && length == 40) {
@@ -592,14 +594,15 @@ int base_status_json(const base_station_t *base, char *out, size_t capacity)
     json_safe(fixed_text, sizeof(fixed_text), base->mode.fixed_text);
 
     // Room for the largest 64-bit value, which the compiler checks for, though a position never comes close
-    char lat[48], lon[48], height[48];
+    char lat[48], lon[48], height[48], height_msl[48];
     exact_decimal(lat, sizeof(lat), (int64_t)base->latitude_e7 * 100 + base->latitude_hp, 9);
     exact_decimal(lon, sizeof(lon), (int64_t)base->longitude_e7 * 100 + base->longitude_hp, 9);
     exact_decimal(height, sizeof(height), (int64_t)base->height_mm * 10 + base->height_hp, 4);
+    exact_decimal(height_msl, sizeof(height_msl), (int64_t)base->height_msl_mm * 10 + base->height_msl_hp, 4);
 
     return snprintf(out, capacity,
         "{\"phase\":\"%s\",\"mode\":\"%s\",\"survey_setting_m\":%.3f,\"survey_setting_s\":%u,\"fixed_position\":\"%s\","
-        "\"have_position\":%s,\"lat\":%s,\"lon\":%s,\"height_m\":%s,\"accuracy_m\":%.4f,\"satellites\":%u,\"fix_type\":%u,"
+        "\"have_position\":%s,\"lat\":%s,\"lon\":%s,\"height_m\":%s,\"height_msl_m\":%s,\"accuracy_m\":%.4f,\"satellites\":%u,\"fix_type\":%u,"
         "\"survey_elapsed_s\":%u,\"survey_accuracy_m\":%.4f,\"survey_valid\":%s,"
         "\"direct_port\":%u,\"direct_rovers\":%d,"
         "\"caster_connected\":%s,\"caster_message\":\"%s\",\"sent_age_ms\":%d,\"frames_sent\":%u,\"bytes_sent\":%u,"
@@ -608,7 +611,7 @@ int base_status_json(const base_station_t *base, char *out, size_t capacity)
         base->mode.kind == BASE_MODE_FIXED ? "fixed" : "survey",
         base->mode.survey_accuracy_mm / 1000.0, (unsigned)base->mode.survey_seconds, fixed_text,
         base->have_position ? "true" : "false",
-        lat, lon, height,
+        lat, lon, height, height_msl,
         base->horizontal_accuracy_tenth_mm / 10000.0, base->satellites, base->fix_type,
         (unsigned)base->survey_elapsed_s, base->survey_mean_accuracy_tenth_mm / 10000.0, base->survey_valid ? "true" : "false",
         (unsigned)base->direct.port, direct_server_rover_count(&base->direct),

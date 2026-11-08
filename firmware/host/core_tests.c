@@ -467,6 +467,115 @@ static void test_bands(void)
     CHECK(length > 0 && length < 1100);
 }
 
+// --- Setting up the module -----------------------------------------------------------------------
+
+static uint8_t sent[64][128];
+static size_t sent_length[64];
+static int sent_count;
+
+static void record_write(void *ctx, const uint8_t *data, size_t length)
+{
+    (void)ctx;
+    if (sent_count < 64 && length <= sizeof(sent[0])) {
+        memcpy(sent[sent_count], data, length);
+        sent_length[sent_count++] = length;
+    }
+}
+
+// The value given for this key in a CFG-VALSET frame, or -1 when the key is not in it
+static int64_t valset_value(const uint8_t *frame, size_t length, uint32_t key)
+{
+    if (length < 12 || frame[2] != UBX_CLASS_CFG || frame[3] != UBX_CFG_VALSET) return -1;
+    static const uint8_t SIZES[] = { 0, 1, 1, 2, 4 };
+    size_t end = length - 2;
+    for (size_t at = 6 + 4; at + 4 <= end;) {
+        uint32_t k = (uint32_t)frame[at] | ((uint32_t)frame[at + 1] << 8) | ((uint32_t)frame[at + 2] << 16) | ((uint32_t)frame[at + 3] << 24);
+        uint8_t size = SIZES[(k >> 28) & 7u];
+        if (k == key) {
+            int64_t value = 0;
+            for (uint8_t i = 0; i < size; i++) value |= (int64_t)frame[at + 4 + i] << (8 * i);
+            return value;
+        }
+        at += 4u + size;
+    }
+    return -1;
+}
+
+static void feed_ack(base_station_t *base, uint8_t id)
+{
+    uint8_t ack[2] = { UBX_CLASS_CFG, id };
+    feed_message(base, UBX_CLASS_ACK, UBX_ACK_ACK, ack, 2);
+}
+
+static void test_configuration_messages(void)
+{
+    static base_station_t base;
+    base_hal_t hal = { .serial_write = record_write, .serial_set_baud = no_baud, .network_ready = no_network };
+    base_caster_settings_t settings = { .port = 2101 };
+    base_mode_t mode = { .kind = BASE_MODE_FIXED };
+    const char *error = NULL;
+    CHECK(fixed_position_parse("40.602809870", "-80.073553310", "293.0042", &mode.fixed, &error));
+    sent_count = 0;
+    base_init(&base, &hal, &settings, &mode, 0);
+
+    // Looking for the module: it asks for one setting, the measurement rate, at the first speed tried
+    base_tick(&base, 1000);
+    CHECK(sent_count == 1 && sent[0][2] == UBX_CLASS_CFG && sent[0][3] == UBX_CFG_VALGET);
+    CHECK(sent_length[0] == 8 + 8 && sent[0][10] == 0x01 && sent[0][13] == 0x30);
+
+    // Any answer finds it. Each step is a CFG-VALSET to RAM, sent once the one before is acknowledged.
+    uint8_t answer[10] = { 1, 0, 0, 0, 0x01, 0x00, 0x21, 0x30, 0xE8, 0x03 };
+    feed_message(&base, UBX_CLASS_CFG, UBX_CFG_VALGET, answer, sizeof(answer));
+    static char json[1500];
+    int before = sent_count;
+    for (int i = 0; i < 20; i++) {
+        base_tick(&base, 1100 + 10 * i);
+        if (sent_count > before) {
+            before = sent_count;
+            feed_ack(&base, UBX_CFG_VALSET);
+        }
+        base_status_json(&base, json, sizeof(json));
+        if (strstr(json, "\"phase\":\"running\"") != NULL) break;
+    }
+    CHECK(strstr(json, "\"phase\":\"running\"") != NULL);
+    CHECK(sent_count == 1 + 5 + 1);
+
+    for (int i = 1; i < sent_count; i++) {
+        CHECK(sent[i][2] == UBX_CLASS_CFG && sent[i][3] == UBX_CFG_VALSET);
+        CHECK(sent[i][7] == 0x01);    // RAM
+    }
+
+    // The port: UART1 at 230400, UBX, NMEA and RTCM3 in, and UBX and RTCM3 out with no NMEA
+    CHECK(valset_value(sent[1], sent_length[1], 0x40520001) == 230400);
+    CHECK(valset_value(sent[1], sent_length[1], 0x10730002) == 1);
+    CHECK(valset_value(sent[1], sent_length[1], 0x10740001) == 1);
+    CHECK(valset_value(sent[1], sent_length[1], 0x10740002) == 0);
+    CHECK(valset_value(sent[1], sent_length[1], 0x10740004) == 1);
+
+    // One measurement a second, on GPS time
+    CHECK(valset_value(sent[2], sent_length[2], 0x30210001) == 1000);
+    CHECK(valset_value(sent[2], sent_length[2], 0x30210002) == 1);
+    CHECK(valset_value(sent[2], sent_length[2], 0x20210003) == 1);
+
+    // Every correction message off, then the mode off, then fixed at the position, to the last digit
+    CHECK(valset_value(sent[3], sent_length[3], 0x2091035F) == 0);
+    CHECK(valset_value(sent[3], sent_length[3], 0x20910304) == 0);
+    CHECK(valset_value(sent[4], sent_length[4], 0x20030001) == 0);
+    CHECK(valset_value(sent[5], sent_length[5], 0x20030001) == 2);
+    CHECK(valset_value(sent[5], sent_length[5], 0x20030002) == 1);
+    CHECK(valset_value(sent[5], sent_length[5], 0x40030009) == 406028098);
+    CHECK(valset_value(sent[5], sent_length[5], 0x4003000A) == (uint32_t)-800735533);
+    CHECK(valset_value(sent[5], sent_length[5], 0x4003000B) == 29300);
+    CHECK(valset_value(sent[5], sent_length[5], 0x2003000C) == 70);
+    CHECK(valset_value(sent[5], sent_length[5], 0x2003000D) == (uint8_t)(int8_t)-10);
+    CHECK(valset_value(sent[5], sent_length[5], 0x2003000E) == 42);
+
+    // Then the corrections on: MSM4 for each constellation and the position every second, the GLONASS biases every 10
+    const uint32_t ONCE_A_SECOND[] = { 0x209102BE, 0x2091035F, 0x20910364, 0x20910369, 0x2091036E };
+    for (size_t i = 0; i < 5; i++) CHECK(valset_value(sent[6], sent_length[6], ONCE_A_SECOND[i]) == 1);
+    CHECK(valset_value(sent[6], sent_length[6], 0x20910304) == 10);
+}
+
 // --- Direct link -------------------------------------------------------------------------------
 
 static void test_direct_requests(void)
@@ -533,6 +642,7 @@ int main(void)
     test_not_configured();
     test_page_data();
     test_bands();
+    test_configuration_messages();
     test_direct_requests();
     test_direct_drops_a_stuck_rover();
     test_update_policy();

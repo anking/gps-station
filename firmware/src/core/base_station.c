@@ -39,14 +39,39 @@ enum { ACK_IDLE, ACK_WAITING, ACK_DONE, ACK_REFUSED };
 static const uint32_t BAUD_RATES[] = { TARGET_BAUD, 38400, 115200, 460800, 9600 };
 #define BAUD_RATE_COUNT (sizeof(BAUD_RATES) / sizeof(BAUD_RATES[0]))
 
-// MSM4 for each constellation, the station position, and the GLONASS biases every 10 seconds
-static const struct { uint8_t id; uint8_t rate; } RTCM_MESSAGES[] = {
-    { 0x05, 1 },    // 1005
-    { 0x4A, 1 },    // 1074
-    { 0x54, 1 },    // 1084
-    { 0x5E, 1 },    // 1094
-    { 0x7C, 1 },    // 1124
-    { 0xE6, 10 },   // 1230
+// The module is set up with UBX-CFG-VALSET, one key and value at a time, the only way u-blox still documents for
+// HPG 1.50 and later. Everything goes to RAM alone, so it is set again at every start, as before.
+#define LAYER_RAM 0x01
+
+#define KEY_UART1_BAUDRATE 0x40520001u
+#define KEY_UART1INPROT_UBX 0x10730001u
+#define KEY_UART1INPROT_NMEA 0x10730002u
+#define KEY_UART1INPROT_RTCM3X 0x10730004u
+#define KEY_UART1OUTPROT_UBX 0x10740001u
+#define KEY_UART1OUTPROT_NMEA 0x10740002u
+#define KEY_UART1OUTPROT_RTCM3X 0x10740004u
+#define KEY_RATE_MEAS 0x30210001u
+#define KEY_RATE_NAV 0x30210002u
+#define KEY_RATE_TIMEREF 0x20210003u
+#define KEY_TMODE_MODE 0x20030001u
+#define KEY_TMODE_POS_TYPE 0x20030002u
+#define KEY_TMODE_LAT 0x40030009u
+#define KEY_TMODE_LON 0x4003000Au
+#define KEY_TMODE_HEIGHT 0x4003000Bu
+#define KEY_TMODE_LAT_HP 0x2003000Cu
+#define KEY_TMODE_LON_HP 0x2003000Du
+#define KEY_TMODE_HEIGHT_HP 0x2003000Eu
+#define KEY_TMODE_SVIN_MIN_DUR 0x40030010u
+#define KEY_TMODE_SVIN_ACC_LIMIT 0x40030011u
+
+// MSM4 for each constellation, the station position, and the GLONASS biases every 10 seconds, all on UART1
+static const struct { uint32_t key; uint8_t rate; } RTCM_MESSAGES[] = {
+    { 0x209102BEu, 1 },     // 1005
+    { 0x2091035Fu, 1 },     // 1074
+    { 0x20910364u, 1 },     // 1084
+    { 0x20910369u, 1 },     // 1094
+    { 0x2091036Eu, 1 },     // 1124
+    { 0x20910304u, 10 },    // 1230
 };
 #define RTCM_MESSAGE_COUNT 6
 
@@ -85,6 +110,37 @@ static void send_ubx(base_station_t *base, uint8_t cls, uint8_t id, const uint8_
     uint8_t frame[128];
     size_t total = ubx_frame(frame, sizeof(frame), cls, id, payload, length);
     if (total > 0) base->hal.serial_write(base->hal.ctx, frame, total);
+}
+
+// A UBX-CFG-VALSET being built: version 0, the layers, two reserved bytes, then each key and its value
+typedef struct {
+    uint8_t payload[100];
+    uint16_t length;
+} valset_t;
+
+static void valset_begin(valset_t *set, uint8_t layers)
+{
+    memset(set->payload, 0, 4);
+    set->payload[1] = layers;
+    set->length = 4;
+}
+
+// The value takes as many bytes as the key's size field says: one for on or off and for one byte, then two or four
+static void valset_add(valset_t *set, uint32_t key, uint32_t value)
+{
+    static const uint8_t SIZES[] = { 0, 1, 1, 2, 4 };
+    uint32_t size_field = (key >> 28) & 7u;
+    uint8_t size = size_field < sizeof(SIZES) ? SIZES[size_field] : 0;
+    if (size == 0 || set->length + 4u + size > sizeof(set->payload)) return;
+
+    put_u32_le(set->payload + set->length, key);
+    for (uint8_t i = 0; i < size; i++) set->payload[set->length + 4 + i] = (uint8_t)(value >> (8 * i));
+    set->length = (uint16_t)(set->length + 4 + size);
+}
+
+static void valset_send(base_station_t *base, const valset_t *set)
+{
+    send_ubx(base, UBX_CLASS_CFG, UBX_CFG_VALSET, set->payload, set->length);
 }
 
 static void set_phase(base_station_t *base, int phase)
@@ -234,16 +290,12 @@ static void send_second_band(base_station_t *base)
 {
     // Both bands of every constellation, since a second band is refused without its first, but the constellations
     // themselves left as they are
-    uint8_t payload[4 + 5 * 2 * SIGNAL_SETTINGS_COUNT] = { 0 };
-    payload[1] = BANDS_LAYERS[base->bands_layer];
-    size_t at = 4;
+    valset_t set;
+    valset_begin(&set, BANDS_LAYERS[base->bands_layer]);
     for (int i = 0; i < SIGNAL_SETTINGS_COUNT; i++) {
-        for (int which = 1; which <= 2; which++, at += 5) {
-            put_u32_le(payload + at, SIGNAL_SETTINGS[i].keys[which]);
-            payload[at + 4] = 1;
-        }
+        for (int which = 1; which <= 2; which++) valset_add(&set, SIGNAL_SETTINGS[i].keys[which], 1);
     }
-    send_ubx(base, UBX_CLASS_CFG, UBX_CFG_VALSET, payload, (uint16_t)at);
+    valset_send(base, &set);
     base->bands_request = BASE_BANDS_WAITING;
     base->bands_deadline_ms = base->now_ms + ACK_TIMEOUT_MS;
 }
@@ -285,11 +337,12 @@ static void on_ubx(void *ctx, uint8_t cls, uint8_t id, const uint8_t *payload, u
     if (cls == UBX_CLASS_CFG || cls == UBX_CLASS_ACK) base->baud_replied = true;
 
     if (cls == UBX_CLASS_ACK && length >= 2) {
-        if (base->bands_request == BASE_BANDS_WAITING && payload[0] == UBX_CLASS_CFG && payload[1] == UBX_CFG_VALSET) {
-            bands_answered(base, id == UBX_ACK_ACK);
-        }
+        // Configuration and the second band both use CFG-VALSET. Configuration comes first: a second band request
+        // still waiting when the module is configured again goes unanswered, and is sent again afterwards.
         if (base->ack_state == ACK_WAITING && payload[0] == base->ack_class && payload[1] == base->ack_id) {
             base->ack_state = (id == UBX_ACK_ACK) ? ACK_DONE : ACK_REFUSED;
+        } else if (base->bands_request == BASE_BANDS_WAITING && payload[0] == UBX_CLASS_CFG && payload[1] == UBX_CFG_VALSET) {
+            bands_answered(base, id == UBX_ACK_ACK);
         }
         return;
     }
@@ -361,87 +414,85 @@ static void on_rtcm(void *ctx, const uint8_t *frame, uint16_t length)
 // Configuration steps
 // ------------------------------------------------------------------------------------------------
 
-static void build_port_config(uint8_t *payload, uint32_t baud)
+// UART1 at this speed, reading UBX, NMEA and RTCM3, and sending UBX and RTCM3 with no NMEA noise
+static void build_port_config(valset_t *set, uint32_t baud)
 {
-    memset(payload, 0, 20);
-    payload[0] = 1;                     // UART1
-    put_u32_le(payload + 4, 0x000008D0);// 8 data bits, no parity, 1 stop bit
-    put_u32_le(payload + 8, baud);
-    payload[12] = 0x23;                 // In: UBX, NMEA, RTCM3
-    payload[14] = 0x21;                 // Out: UBX, RTCM3. No NMEA noise.
+    valset_begin(set, LAYER_RAM);
+    valset_add(set, KEY_UART1_BAUDRATE, baud);
+    valset_add(set, KEY_UART1INPROT_UBX, 1);
+    valset_add(set, KEY_UART1INPROT_NMEA, 1);
+    valset_add(set, KEY_UART1INPROT_RTCM3X, 1);
+    valset_add(set, KEY_UART1OUTPROT_UBX, 1);
+    valset_add(set, KEY_UART1OUTPROT_NMEA, 0);
+    valset_add(set, KEY_UART1OUTPROT_RTCM3X, 1);
 }
 
-static void build_tmode3(const base_station_t *base, uint8_t *payload, int mode)
+static void build_mode(const base_station_t *base, valset_t *set, int mode)
 {
-    memset(payload, 0, 40);
-    payload[2] = (uint8_t)mode;
+    valset_begin(set, LAYER_RAM);
+    valset_add(set, KEY_TMODE_MODE, (uint32_t)mode);
 
     if (mode == BASE_MODE_FIXED) {
         const fixed_position_t *p = &base->mode.fixed;
-        payload[3] = 1;                 // The position is latitude, longitude, height rather than ECEF
-        put_u32_le(payload + 4, (uint32_t)p->latitude_e7);
-        put_u32_le(payload + 8, (uint32_t)p->longitude_e7);
-        put_u32_le(payload + 12, (uint32_t)p->height_cm);
-        payload[16] = (uint8_t)p->latitude_hp;
-        payload[17] = (uint8_t)p->longitude_hp;
-        payload[18] = (uint8_t)p->height_hp;
+        valset_add(set, KEY_TMODE_POS_TYPE, 1);    // Latitude, longitude, height rather than ECEF
+        valset_add(set, KEY_TMODE_LAT, (uint32_t)p->latitude_e7);
+        valset_add(set, KEY_TMODE_LON, (uint32_t)p->longitude_e7);
+        valset_add(set, KEY_TMODE_HEIGHT, (uint32_t)p->height_cm);
+        valset_add(set, KEY_TMODE_LAT_HP, (uint32_t)(uint8_t)p->latitude_hp);
+        valset_add(set, KEY_TMODE_LON_HP, (uint32_t)(uint8_t)p->longitude_hp);
+        valset_add(set, KEY_TMODE_HEIGHT_HP, (uint32_t)(uint8_t)p->height_hp);
     } else if (mode == BASE_MODE_SURVEY) {
-        put_u32_le(payload + 24, base->mode.survey_seconds);
-        put_u32_le(payload + 28, base->mode.survey_accuracy_mm * 10); // In 0.1 mm
+        valset_add(set, KEY_TMODE_SVIN_MIN_DUR, base->mode.survey_seconds);
+        valset_add(set, KEY_TMODE_SVIN_ACC_LIMIT, base->mode.survey_accuracy_mm * 10);   // In 0.1 mm
     }
 }
 
-static void build_rtcm_rate(uint8_t *payload, uint8_t id, uint8_t rate)
+// Every correction message at the same rate, those given or none
+static void build_rtcm_rates(valset_t *set, bool on)
 {
-    memset(payload, 0, 8);
-    payload[0] = 0xF5;
-    payload[1] = id;
-    payload[3] = rate;                  // UART1 is the second of the six port rates
+    valset_begin(set, LAYER_RAM);
+    for (int i = 0; i < RTCM_MESSAGE_COUNT; i++) valset_add(set, RTCM_MESSAGES[i].key, on ? RTCM_MESSAGES[i].rate : 0);
 }
 
 // Sends the given step of the current phase and returns true, or returns false when there are no more.
 static bool send_step(base_station_t *base)
 {
-    uint8_t payload[40];
+    valset_t set;
 
     if (base->phase == PHASE_ENABLE_RTCM) {
-        if (base->step >= RTCM_MESSAGE_COUNT) return false;
-        build_rtcm_rate(payload, RTCM_MESSAGES[base->step].id, RTCM_MESSAGES[base->step].rate);
-        base->ack_id = UBX_CFG_MSG;
-        send_ubx(base, UBX_CLASS_CFG, UBX_CFG_MSG, payload, 8);
+        if (base->step > 0) return false;
+        build_rtcm_rates(&set, true);
     } else {
         // Start from a known state: the module keeps its last mode for as long as it has power
-        int step = base->step;
-        if (step == 0) {
-            build_port_config(payload, TARGET_BAUD);
-            base->ack_id = UBX_CFG_PRT;
-            send_ubx(base, UBX_CLASS_CFG, UBX_CFG_PRT, payload, 20);
-        } else if (step == 1) {
-            memset(payload, 0, 6);
-            payload[0] = 0xE8;          // One measurement per 1000 ms: more would only multiply the upload
-            payload[1] = 0x03;
-            payload[2] = 1;
-            payload[4] = 1;
-            base->ack_id = UBX_CFG_RATE;
-            send_ubx(base, UBX_CLASS_CFG, UBX_CFG_RATE, payload, 6);
-        } else if (step < 2 + RTCM_MESSAGE_COUNT) {
-            build_rtcm_rate(payload, RTCM_MESSAGES[step - 2].id, 0);
-            base->ack_id = UBX_CFG_MSG;
-            send_ubx(base, UBX_CLASS_CFG, UBX_CFG_MSG, payload, 8);
-        } else if (step == 2 + RTCM_MESSAGE_COUNT) {
-            build_tmode3(base, payload, 0);
-            base->ack_id = UBX_CFG_TMODE3;
-            send_ubx(base, UBX_CLASS_CFG, UBX_CFG_TMODE3, payload, 40);
-        } else if (step == 3 + RTCM_MESSAGE_COUNT) {
-            build_tmode3(base, payload, base->mode.kind);
-            base->ack_id = UBX_CFG_TMODE3;
-            send_ubx(base, UBX_CLASS_CFG, UBX_CFG_TMODE3, payload, 40);
-        } else {
+        switch (base->step) {
+        case 0:
+            build_port_config(&set, TARGET_BAUD);
+            break;
+        case 1:
+            // One measurement per 1000 ms, each solved, on GPS time: more would only multiply the upload
+            valset_begin(&set, LAYER_RAM);
+            valset_add(&set, KEY_RATE_MEAS, 1000);
+            valset_add(&set, KEY_RATE_NAV, 1);
+            valset_add(&set, KEY_RATE_TIMEREF, 1);
+            break;
+        case 2:
+            build_rtcm_rates(&set, false);
+            break;
+        case 3:
+            // Off first, so setting the mode again restarts a survey
+            build_mode(base, &set, 0);
+            break;
+        case 4:
+            build_mode(base, &set, base->mode.kind);
+            break;
+        default:
             return false;
         }
     }
 
+    valset_send(base, &set);
     base->ack_class = UBX_CLASS_CFG;
+    base->ack_id = UBX_CFG_VALSET;
     base->ack_state = ACK_WAITING;
     base->ack_deadline_ms = base->now_ms + ACK_TIMEOUT_MS;
     return true;
@@ -565,9 +616,9 @@ static void run_detect(base_station_t *base)
             base->last_ubx_ms = now;
             set_phase(base, PHASE_CONFIGURE);
         } else {
-            uint8_t payload[20];
-            build_port_config(payload, TARGET_BAUD);
-            send_ubx(base, UBX_CLASS_CFG, UBX_CFG_PRT, payload, 20);
+            valset_t set;
+            build_port_config(&set, TARGET_BAUD);
+            valset_send(base, &set);
             set_phase(base, PHASE_SET_BAUD);
         }
         return;
@@ -583,8 +634,11 @@ static void run_detect(base_station_t *base)
         gnss_stream_reset(&base->stream);
     }
 
+    // Any answer at all shows the speed is right: ask for one setting, the measurement rate
+    uint8_t question[8] = { 0 };
+    put_u32_le(question + 4, KEY_RATE_MEAS);
     base->step = 1;
-    send_ubx(base, UBX_CLASS_CFG, UBX_CFG_RATE, NULL, 0);
+    send_ubx(base, UBX_CLASS_CFG, UBX_CFG_VALGET, question, sizeof(question));
     base->next_action_ms = now + DETECT_WAIT_MS;
 }
 

@@ -11,10 +11,6 @@
 #define UBX_ACK_NAK 0x00
 #define UBX_ACK_ACK 0x01
 
-#define UBX_CFG_PRT 0x00
-#define UBX_CFG_MSG 0x01
-#define UBX_CFG_RATE 0x08
-#define UBX_CFG_TMODE3 0x71
 #define UBX_CFG_VALSET 0x8A
 #define UBX_CFG_VALGET 0x8B
 

@@ -3,8 +3,9 @@
 A software ZED-F9P for testing without hardware.
 
 It answers the UBX commands sent to it on a pseudo terminal, and behaves like the module on the points that
-matter: survey-in takes a few seconds, RTCM output follows UBX-CFG-MSG, and it can go silent or send damaged
-frames on request. Everything it sees is kept for tests to assert on.
+matter: it is set up with UBX-CFG-VALSET and refuses the old CFG messages, survey-in takes a few seconds, RTCM
+output follows the CFG-MSGOUT settings, and it can go silent or send damaged frames on request. Everything it sees
+is kept for tests to assert on.
 
 Linux only (uses pty). It is not a GNSS simulator: positions are constants.
 """
@@ -17,10 +18,10 @@ import tty
 
 SYNC = b"\xb5\x62"
 CLS_NAV, CLS_ACK, CLS_CFG = 0x01, 0x05, 0x06
-ID_CFG_PRT, ID_CFG_MSG, ID_CFG_RATE, ID_CFG_TMODE3, ID_CFG_VALSET, ID_CFG_VALGET = 0x00, 0x01, 0x08, 0x71, 0x8A, 0x8B
+ID_CFG_VALSET, ID_CFG_VALGET = 0x8A, 0x8B
+# The old way of setting up a module, which u-blox no longer documents: CFG-PRT, CFG-MSG, CFG-RATE, CFG-TMODE3
+LEGACY_CFG = (0x00, 0x01, 0x08, 0x71)
 ID_NAV_PVT, ID_NAV_HPPOSLLH, ID_NAV_SVIN, ID_NAV_SAT, ID_NAV_SIG = 0x07, 0x14, 0x3B, 0x35, 0x43
-RTCM_MSG_CLASS = 0xF5
-RTCM_TYPES = {0x05: 1005, 0x4A: 1074, 0x54: 1084, 0x5E: 1094, 0x7C: 1124}
 
 # CFG-SIGNAL keys for each constellation: the constellation, its first band and its second band, and the u-blox
 # signal numbers of those two bands
@@ -32,7 +33,44 @@ SIGNAL_KEYS = {
     5: ((0x10310024, 0x10310012, 0x10310015), (0, 4)),  # QZSS
 }
 SECOND_BAND_KEYS = [keys[2] for keys, _ in SIGNAL_KEYS.values()]
-LAYER_FLASH = 0x04
+
+UART1_BAUDRATE = 0x40520001
+UART1INPROT_UBX, UART1INPROT_NMEA, UART1INPROT_RTCM3X = 0x10730001, 0x10730002, 0x10730004
+UART1OUTPROT_UBX, UART1OUTPROT_NMEA, UART1OUTPROT_RTCM3X = 0x10740001, 0x10740002, 0x10740004
+RATE_MEAS, RATE_NAV, RATE_TIMEREF = 0x30210001, 0x30210002, 0x20210003
+TMODE_MODE, TMODE_POS_TYPE = 0x20030001, 0x20030002
+TMODE_LAT, TMODE_LON, TMODE_HEIGHT = 0x40030009, 0x4003000A, 0x4003000B
+TMODE_LAT_HP, TMODE_LON_HP, TMODE_HEIGHT_HP = 0x2003000C, 0x2003000D, 0x2003000E
+TMODE_SVIN_MIN_DUR, TMODE_SVIN_ACC_LIMIT = 0x40030010, 0x40030011
+# The RTCM messages a base sends, by the key of their output rate on UART1
+RTCM_RATE_KEYS = {1005: 0x209102BE, 1074: 0x2091035F, 1084: 0x20910364, 1094: 0x20910369, 1124: 0x2091036E, 1230: 0x20910304}
+SIGNED = {TMODE_LAT, TMODE_LON, TMODE_HEIGHT, TMODE_LAT_HP, TMODE_LON_HP, TMODE_HEIGHT_HP}
+
+# The factory settings, as a chip erase or a new module leaves them
+DEFAULTS = {
+    UART1_BAUDRATE: 38400,
+    UART1INPROT_UBX: 1, UART1INPROT_NMEA: 1, UART1INPROT_RTCM3X: 1,
+    UART1OUTPROT_UBX: 1, UART1OUTPROT_NMEA: 1, UART1OUTPROT_RTCM3X: 1,
+    RATE_MEAS: 1000, RATE_NAV: 1, RATE_TIMEREF: 1,
+    TMODE_MODE: 0, TMODE_POS_TYPE: 0, TMODE_LAT: 0, TMODE_LON: 0, TMODE_HEIGHT: 0,
+    TMODE_LAT_HP: 0, TMODE_LON_HP: 0, TMODE_HEIGHT_HP: 0, TMODE_SVIN_MIN_DUR: 0, TMODE_SVIN_ACC_LIMIT: 0,
+    **{key: 0 for key in RTCM_RATE_KEYS.values()},
+    **{key: 1 for keys, _ in SIGNAL_KEYS.values() for key in keys},
+}
+LAYER_RAM, LAYER_FLASH = 0x01, 0x04
+
+
+def value_size(key):
+    """Bytes a key's value takes, from the key's own size field."""
+    return {1: 1, 2: 1, 3: 2, 4: 4, 5: 8}[(key >> 28) & 7]
+
+
+def unpack_value(key, data):
+    return int.from_bytes(data[:value_size(key)], "little", signed=key in SIGNED)
+
+
+def pack_value(key, value):
+    return int(value).to_bytes(value_size(key), "little", signed=key in SIGNED)
 
 
 def ubx_frame(cls, msg_id, payload=b""):
@@ -81,20 +119,16 @@ class F9pSim:
         self.running = True
         self.silent = False
         self.damage_next_frame = False
-        self.tmode3 = bytearray(40)
         self.survey_started = None
-        self.rtcm_rates = {}
-        self.rate_ms = 1000
-        self.port_config = None
 
         # Settings kept through a power cut, and those in use
-        self.saved_signals = {key: 1 for keys, _ in SIGNAL_KEYS.values() for key in keys}
+        self.saved = dict(DEFAULTS)
         for key in SECOND_BAND_KEYS:
-            self.saved_signals[key] = 1 if second_band else 0
-        self.signals = dict(self.saved_signals)
+            self.saved[key] = 1 if second_band else 0
+        self.config = dict(self.saved)
         self.antenna_second_band = antenna_second_band
         self.refuse_flash = False
-        self.valset_layers = []
+        self.valsets = []  # (layers, {key: value}) for each CFG-VALSET received
 
         self.rtcm_sent_frames = []
         self.commands = []
@@ -104,27 +138,28 @@ class F9pSim:
 
     @property
     def mode(self):
-        return self.tmode3[2]
+        return self.config[TMODE_MODE]
+
+    @property
+    def rate_ms(self):
+        return self.config[RATE_MEAS]
 
     @property
     def fixed_position(self):
         """(lat 1e-7, lon 1e-7, height cm, lat hp, lon hp, height hp, LLA flag)"""
-        lat, lon, height = struct.unpack_from("<iii", self.tmode3, 4)
-        lat_hp, lon_hp, height_hp = struct.unpack_from("<bbb", self.tmode3, 16)
-        return lat, lon, height, lat_hp, lon_hp, height_hp, bool(self.tmode3[3] & 1)
+        c = self.config
+        return (c[TMODE_LAT], c[TMODE_LON], c[TMODE_HEIGHT], c[TMODE_LAT_HP], c[TMODE_LON_HP], c[TMODE_HEIGHT_HP],
+                c[TMODE_POS_TYPE] == 1)
 
     @property
     def survey_settings(self):
         """(minimum seconds, accuracy limit in 0.1 mm)"""
-        return struct.unpack_from("<II", self.tmode3, 24)
+        return self.config[TMODE_SVIN_MIN_DUR], self.config[TMODE_SVIN_ACC_LIMIT]
 
     def power_cycle(self):
-        """Forget everything, as the module does when it loses power."""
-        self.tmode3 = bytearray(40)
-        self.rtcm_rates = {}
+        """Forget everything not saved, as the module does when it loses power."""
+        self.config = dict(self.saved)
         self.survey_started = None
-        self.rate_ms = 1000
-        self.signals = dict(self.saved_signals)
 
     def close(self):
         self.running = False
@@ -181,49 +216,40 @@ class F9pSim:
             if handler:
                 self._write(ubx_frame(CLS_NAV, msg_id, handler()))
 
+    def _refuse(self, msg_id):
+        self._write(ubx_frame(CLS_ACK, 0x00, bytes([CLS_CFG, msg_id])))
+
     def _handle_cfg(self, msg_id, payload):
-        if msg_id == ID_CFG_PRT:
-            if len(payload) <= 1:
-                reply = bytearray(20)
-                reply[0] = payload[0] if payload else 1
-                self._write(ubx_frame(CLS_CFG, ID_CFG_PRT, bytes(reply)))
-            else:
-                self.port_config = bytes(payload)
-        elif msg_id == ID_CFG_RATE:
-            if len(payload) == 0:
-                self._write(ubx_frame(CLS_CFG, ID_CFG_RATE, struct.pack("<HHH", self.rate_ms, 1, 1)))
-            else:
-                self.rate_ms = struct.unpack_from("<H", payload, 0)[0]
-        elif msg_id == ID_CFG_MSG:
-            if len(payload) == 2:
-                self._write(ubx_frame(CLS_CFG, ID_CFG_MSG, bytes(payload) + bytes(6)))
-            elif len(payload) >= 8 and payload[0] == RTCM_MSG_CLASS:
-                self.rtcm_rates[payload[1]] = max(payload[2:8])
-        elif msg_id == ID_CFG_TMODE3:
-            if len(payload) == 0:
-                self._write(ubx_frame(CLS_CFG, ID_CFG_TMODE3, bytes(self.tmode3)))
-            else:
-                self.tmode3 = bytearray(payload)
-                self.survey_started = time.monotonic() if self.tmode3[2] == 1 else None
-        elif msg_id == ID_CFG_VALGET:
+        if msg_id == ID_CFG_VALGET:
             keys = [struct.unpack_from("<I", payload, at)[0] for at in range(4, len(payload) - 3, 4)]
-            if any(key not in self.signals for key in keys):
+            if any(key not in self.config for key in keys):
                 # One key it does not know and the whole question is refused
-                self._write(ubx_frame(CLS_ACK, 0x00, bytes([CLS_CFG, msg_id])))
-                return
-            answer = bytes([1, payload[1], 0, 0]) + b"".join(struct.pack("<IB", key, self.signals[key]) for key in keys)
+                return self._refuse(msg_id)
+            answer = bytes([1, payload[1], 0, 0]) + b"".join(struct.pack("<I", key) + pack_value(key, self.config[key]) for key in keys)
             self._write(ubx_frame(CLS_CFG, ID_CFG_VALGET, answer))
         elif msg_id == ID_CFG_VALSET:
             layers = payload[1]
-            self.valset_layers.append(layers)
-            changes = {struct.unpack_from("<I", payload, at)[0]: payload[at + 4] for at in range(4, len(payload) - 4, 5)}
-            if (self.refuse_flash and layers & LAYER_FLASH) or any(key not in self.signals for key in changes):
-                self._write(ubx_frame(CLS_ACK, 0x00, bytes([CLS_CFG, msg_id])))
-                return
-            if layers & 0x01:
-                self.signals.update(changes)
+            changes = {}
+            at = 4
+            while at + 4 <= len(payload):
+                key = struct.unpack_from("<I", payload, at)[0]
+                if key not in self.config or at + 4 + value_size(key) > len(payload):
+                    # All or nothing: one key it does not know and nothing changes
+                    return self._refuse(msg_id)
+                changes[key] = unpack_value(key, payload[at + 4:])
+                at += 4 + value_size(key)
+            self.valsets.append((layers, changes))
+            if self.refuse_flash and layers & LAYER_FLASH:
+                return self._refuse(msg_id)
+            if layers & LAYER_RAM:
+                self.config.update(changes)
+                if TMODE_MODE in changes:
+                    self.survey_started = time.monotonic() if changes[TMODE_MODE] == 1 else None
             if layers & LAYER_FLASH:
-                self.saved_signals.update(changes)
+                self.saved.update(changes)
+        else:
+            # Includes the old messages, CFG-PRT, CFG-MSG, CFG-RATE and CFG-TMODE3, as if the module had dropped them
+            return self._refuse(msg_id)
         self._write(ubx_frame(CLS_ACK, 0x01, bytes([CLS_CFG, msg_id])))
 
     def _nav_pvt(self):
@@ -258,12 +284,12 @@ class F9pSim:
         signals = []
         for gnss in (0, 2, 3, 6):
             (on, first, second), (first_id, second_id) = SIGNAL_KEYS[gnss]
-            if not self.signals[on]:
+            if not self.config[on]:
                 continue
             for sv in range(1, 7):
-                if self.signals[first]:
+                if self.config[first]:
                     signals.append((gnss, sv, first_id, 38 + sv, 0x08 | 0x10))
-                if self.signals[second] and self.antenna_second_band:
+                if self.config[second] and self.antenna_second_band:
                     signals.append((gnss, sv, second_id, 30 + sv, 0x10))
         signals.append((1, 133, 0, 30, 0))
         signals.append((0, 30, 0, 0, 0))
@@ -286,13 +312,16 @@ class F9pSim:
         return bytes(message)
 
     def _rtcm_output(self):
+        epoch = 0
         while self.running:
             time.sleep(self.rate_ms / 1000.0)
+            epoch += 1
             ready = self.mode == 2 or (self.mode == 1 and self._survey_elapsed() >= self.survey_seconds)
             if not ready:
                 continue
-            for key, message_type in RTCM_TYPES.items():
-                if self.rtcm_rates.get(key):
+            for message_type, key in RTCM_RATE_KEYS.items():
+                rate = self.config[key]
+                if rate and epoch % rate == 0:
                     frame = rtcm_frame(message_type)
                     if self.damage_next_frame:
                         self.damage_next_frame = False

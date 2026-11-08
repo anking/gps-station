@@ -24,6 +24,8 @@ Both sides use 3.3 V logic, so no level shifter is needed. Power the F9P board f
 
 Any baud rate on the module is fine. The firmware finds it and switches to 230400.
 
+The firmware sets the module up at every start, with `UBX-CFG-VALSET` into RAM: its port, its rate, the RTCM messages and the survey or fixed position. That is the only way u-blox documents from module firmware HPG 1.50 on; the older `CFG-PRT`, `CFG-MSG`, `CFG-RATE` and `CFG-TMODE3` messages are not used. Nothing is saved in the module except the second band, when you turn it on from the page. So a module whose settings were wiped, as a firmware update with chip erase does, works straight away.
+
 ## Flash it
 
 With [PlatformIO](https://platformio.org/) installed:

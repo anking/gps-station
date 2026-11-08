@@ -15,16 +15,21 @@
 #define UBX_CFG_MSG 0x01
 #define UBX_CFG_RATE 0x08
 #define UBX_CFG_TMODE3 0x71
+#define UBX_CFG_VALSET 0x8A
+#define UBX_CFG_VALGET 0x8B
 
 #define UBX_NAV_PVT 0x07
 #define UBX_NAV_HPPOSLLH 0x14
 #define UBX_NAV_SVIN 0x3B
 #define UBX_NAV_SAT 0x35
+#define UBX_NAV_SIG 0x43
 
-// The satellite list is 8 bytes plus 12 per satellite, and the buffer is shared with the longest RTCM frame
-#define UBX_MAX_PAYLOAD 1024
+// The signal list is the longest message read: 8 bytes plus 16 for each of up to 255 signals, so it is never too long
+// to keep. The buffer is shared with RTCM frames, the longest of which is shorter.
+#define UBX_MAX_PAYLOAD (8 + 16 * 255)
 #define UBX_OVERHEAD 8
 #define RTCM_MAX_FRAME (3 + 1023 + 3)
+#define GNSS_STREAM_BUFFER (UBX_MAX_PAYLOAD > RTCM_MAX_FRAME ? UBX_MAX_PAYLOAD : RTCM_MAX_FRAME)
 
 typedef struct {
     void (*on_ubx)(void *ctx, uint8_t cls, uint8_t id, const uint8_t *payload, uint16_t length);
@@ -32,7 +37,7 @@ typedef struct {
     void *ctx;
 
     int state;
-    uint8_t buffer[RTCM_MAX_FRAME];
+    uint8_t buffer[GNSS_STREAM_BUFFER];
     uint16_t count;
     uint16_t expected;
     uint8_t cls;

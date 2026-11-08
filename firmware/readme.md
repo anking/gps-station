@@ -47,9 +47,11 @@ If it cannot join your network for 2 minutes, the setup network comes back as we
 
 The page shows what it is doing, and in plain words what is wrong if anything is. All settings, and the base mode, survive a restart. It has these tabs:
 
-- **Overview:** whether corrections are going out, to whom, the satellites in use, the base's position, a survey's progress, and the WiFi signal.
+- **Overview:** whether corrections are going out, to whom, the satellites in use, how many signals are heard on each band, the base's position, a survey's progress, and the WiFi signal.
 - **Map:** the base on satellite or street imagery. The map library is stored on the board, so only the imagery comes from the internet, through your phone or computer. On the setup network there is none.
-- **Satellites:** where each satellite is in the sky and how strong its signal is. Satellites missing from one side of the sky mean something blocks the antenna there.
+- **Satellites:**
+  - where each satellite is in the sky and how strong its signal is. Satellites missing from one side of the sky mean something blocks the antenna there;
+  - **Bands:** for each constellation, how many signals are heard on its first band and on its second, how strong they are, and whether the module is set to track each band. See [Two bands](#two-bands).
 - **Position:** survey or fixed. For a fixed position:
   - a map to put the base on: tap where the antenna is, or drag the red pin. The blue dot is where the module says it is, and the page says how far apart the two are;
   - **Use the current position** copies where the module is now, to the full precision it reports, and **Use the current height** copies just its height;
@@ -62,6 +64,15 @@ The page shows what it is doing, and in plain words what is wrong if anything is
 - **Fixed** uses a position you give it. Use this for anything that must line up from day to day. Get the position from a long survey, or from a day of raw data sent to a free service such as [OPUS](https://geodesy.noaa.gov/OPUS/) or [CSRS-PPP](https://webapp.csrs-scrs.nrcan-rncan.gc.ca/geod/tools-outils/ppp.php), or pick it on the map. The antenna must not move afterwards.
   - **On the map:** a point picked there is only as right as the imagery, often a metre or so out. The rovers' positions are then out by the same, but the same every day, which is what matters for anything saved in rover coordinates. Many metres from where the module says it is can make RTK fixed harder for rovers to reach, and the page warns from 5 m.
   - **Heights** are above the ellipsoid, the smooth shape GPS measures from, not above sea level. The two differ by tens of metres depending on where you are: the module's own figure for here is on the page. A survey's height, shown as Height (ellipsoid) on the Overview, is already the right kind. A height from a map or a sign is above sea level: enter it in the sea level box. A height a few metres out moves the rovers' heights, not where they are on the ground.
+
+### Two bands
+
+A rover gets an RTK fix quickly and reliably only when the corrections carry two bands from each satellite: L1 and L2 for GPS and GLONASS, E1 and E5b for Galileo, and B1I and B2I for BeiDou. With the first band alone it can stay at RTK float for a long time, or never fix. The corrections carry only the bands the base hears.
+
+- **If the second band is off in the module,** the Bands card says so and offers **Turn the second band on**. That turns on both bands of every constellation, leaves the constellations themselves as they are, and saves it in the module, so it lasts through a power cut. The module restarts its tracking, so corrections pause for a few seconds. If the module will not save it, it is on until the module loses power, and the page says so. The firmware never changes this by itself.
+- **If the second band is on but little is heard on it,** the antenna is probably made for L1 only, or its cable or a splitter loses the higher band. The fix is a multi-band antenna.
+
+Either way, once the base has heard fewer than half as many second-band signals as first-band ones for about 15 seconds, the page and the monitoring service show a warning, `SINGLE_BAND`. It judges only with at least 8 first-band signals heard.
 
 **On an ESP32-C3 Super Mini:** many of these boards are reported to lose WiFi at full power, so this build caps it at 8.5 dBm. That shortens its range, so check the signal on the page with the board where it will finally sit. If it needs more and this board copes, raise `WIFI_MAX_TX_POWER` in [platformio.ini](./platformio.ini).
 
@@ -127,3 +138,5 @@ make -C host e2e     # end-to-end scenarios, Linux only
 ```
 
 These run under AddressSanitizer and exercise the same C code as the firmware, apart from the serial port, the web UI, and the MQTT and update code, which only runs on the board.
+
+On newer kernels AddressSanitizer can crash at random at startup, printing only `AddressSanitizer:DEADLYSIGNAL`, because of how widely addresses are randomised. Run them with randomisation off: `setarch $(uname -m) -R make -C host e2e`. In Docker that also needs `--security-opt seccomp=unconfined`.

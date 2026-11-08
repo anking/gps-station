@@ -25,6 +25,10 @@ enum { ACK_IDLE, ACK_WAITING, ACK_DONE, ACK_REFUSED };
 #define GPS_SILENCE_MS 5000u
 #define RTCM_STALL_MS 5000u
 #define SKY_POLL_EVERY 5   // Status polls, so about every 5 seconds: it is long, and only for people looking at the page
+#define SIGNALS_POLL_OFFSET 2          // The signal list is asked for between satellite lists, as often
+#define SIGNAL_SETTINGS_POLL_EVERY 60  // About once a minute: they change only when someone changes them
+#define SINGLE_BAND_MIN_FIRST 8        // First-band signals before the second band can be judged against them
+#define SINGLE_BAND_READINGS 3         // In a row, about 15 seconds, so a second band still coming back is not a warning
 
 // Public casters count failed connections per IP and ban the address
 #define BACKOFF_FIRST_MS 15000u
@@ -46,6 +50,23 @@ static const struct { uint8_t id; uint8_t rate; } RTCM_MESSAGES[] = {
 };
 #define RTCM_MESSAGE_COUNT 6
 
+// The module's band settings that are read, for each constellation: the constellation itself, its first band and its
+// second band. QZSS is shown but not judged, since it is seen only around Japan and Australia.
+static const struct { uint8_t gnss; bool judged; uint32_t keys[3]; } SIGNAL_SETTINGS[] = {
+    { 0, true, { 0x1031001F, 0x10310001, 0x10310003 } },     // GPS: L1C/A, L2C
+    { 2, true, { 0x10310021, 0x10310007, 0x1031000A } },     // Galileo: E1, E5b
+    { 3, true, { 0x10310022, 0x1031000D, 0x1031000E } },     // BeiDou: B1I, B2I
+    { 6, true, { 0x10310025, 0x10310018, 0x1031001A } },     // GLONASS: L1, L2
+    { 5, false, { 0x10310024, 0x10310012, 0x10310015 } },    // QZSS: L1C/A, L2C
+};
+#define SIGNAL_SETTINGS_COUNT 5
+
+// Where turning the second band on is kept: battery-backed RAM and flash as well as RAM, so it lasts through a power
+// cut, or failing that RAM alone, until the module loses power
+static const uint8_t BANDS_LAYERS[] = { 0x07, 0x01 };
+#define BANDS_LAYER_COUNT 2
+#define LAYER_FLASH 0x04
+
 static uint32_t u32_le(const uint8_t *p)
 {
     return (uint32_t)p[0] | ((uint32_t)p[1] << 8) | ((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 24);
@@ -61,7 +82,7 @@ static void put_u32_le(uint8_t *p, uint32_t v)
 
 static void send_ubx(base_station_t *base, uint8_t cls, uint8_t id, const uint8_t *payload, uint16_t length)
 {
-    uint8_t frame[64];
+    uint8_t frame[128];
     size_t total = ubx_frame(frame, sizeof(frame), cls, id, payload, length);
     if (total > 0) base->hal.serial_write(base->hal.ctx, frame, total);
 }
@@ -102,6 +123,155 @@ static void start_detect(base_station_t *base)
 }
 
 // ------------------------------------------------------------------------------------------------
+// Bands
+// ------------------------------------------------------------------------------------------------
+
+// Which band a signal is on, from u-blox's signal numbers. SBAS and anything else is 0: none of it is in the corrections.
+static uint8_t signal_band(uint8_t gnss, uint8_t signal)
+{
+    switch (gnss) {
+    case 0: return signal == 0 ? 1 : (signal == 3 || signal == 4) ? 2 : 0;    // GPS: L1C/A; L2C
+    case 2: return signal <= 1 ? 1 : (signal == 5 || signal == 6) ? 2 : 0;    // Galileo: E1; E5b
+    case 3: return signal <= 1 ? 1 : (signal == 2 || signal == 3) ? 2 : 0;    // BeiDou: B1I; B2I
+    case 5: return signal <= 1 ? 1 : (signal == 4 || signal == 5) ? 2 : 0;    // QZSS: L1C/A, L1S; L2C
+    case 6: return signal == 0 ? 1 : signal == 2 ? 2 : 0;                     // GLONASS: L1; L2
+    default: return 0;
+    }
+}
+
+// The middle strength, from how many signals there are at each
+static uint8_t median_strength(const uint8_t counts[64], unsigned total)
+{
+    unsigned seen = 0;
+    for (uint8_t cno = 0; cno < 64 && total > 0; cno++) {
+        seen += counts[cno];
+        if (seen > total / 2u) return cno;
+    }
+    return 0;
+}
+
+static void read_signals(base_station_t *base, const uint8_t *payload)
+{
+    uint8_t count = payload[5];
+    uint8_t strengths[2][64] = { { 0 } };
+    base_band_t bands[2] = { { 0 } };
+
+    base->signal_count = 0;
+    for (unsigned i = 0; i < count && base->signal_count < BASE_MAX_SIGNALS; i++) {
+        const uint8_t *entry = payload + 8 + 16 * i;
+        if (entry[6] == 0) continue;    // Searched for, not heard
+        base_signal_t *signal = &base->signals[base->signal_count++];
+        signal->gnss = entry[0];
+        signal->id = entry[1];
+        signal->band = signal_band(entry[0], entry[2]);
+        signal->cno = entry[6];
+        signal->used = (entry[10] & 0x08u) != 0;
+        if (signal->band == 0) continue;
+
+        base_band_t *band = &bands[signal->band - 1];
+        band->heard++;
+        if (signal->used) band->used++;
+        strengths[signal->band - 1][signal->cno < 63 ? signal->cno : 63]++;
+    }
+    for (int b = 0; b < 2; b++) bands[b].median_cno = median_strength(strengths[b], bands[b].heard);
+
+    base->first_band = bands[0];
+    base->second_band = bands[1];
+    base->have_signals = true;
+    base->signals_at_ms = base->now_ms;
+
+    // A sky full of first-band signals and few or none on the second: corrections a rover can hardly fix with
+    bool single = bands[0].heard >= SINGLE_BAND_MIN_FIRST && bands[1].heard * 2u < bands[0].heard;
+    if (!single) {
+        base->single_band_readings = 0;
+        base->errors &= ~BASE_ERROR_SINGLE_BAND;
+    } else if (++base->single_band_readings >= SINGLE_BAND_READINGS) {
+        base->single_band_readings = SINGLE_BAND_READINGS;
+        base->errors |= BASE_ERROR_SINGLE_BAND;
+    }
+}
+
+static bool setting_on(const base_station_t *base, int constellation, int which)
+{
+    return (base->signal_settings >> (3 * constellation + which)) & 1u;
+}
+
+static void read_signal_settings(base_station_t *base, const uint8_t *payload, uint16_t length)
+{
+    // Version, layer and position, then each setting's key and value: one byte, as these are all on or off
+    uint32_t settings = 0;
+    int found = 0;
+    for (uint16_t at = 4; at + 5u <= length; at += 5) {
+        uint32_t key = u32_le(payload + at);
+        if (((key >> 28) & 7u) != 1) return;   // Not an on or off setting, so not an answer to this firmware's question
+        for (int i = 0; i < SIGNAL_SETTINGS_COUNT; i++) {
+            for (int which = 0; which < 3; which++) {
+                if (SIGNAL_SETTINGS[i].keys[which] != key) continue;
+                found++;
+                if (payload[at + 4]) settings |= 1u << (3 * i + which);
+            }
+        }
+    }
+    if (found != 3 * SIGNAL_SETTINGS_COUNT) return;
+
+    base->signal_settings = settings;
+    base->have_signal_settings = true;
+    base->signal_settings_at_ms = base->now_ms;
+}
+
+static void poll_signal_settings(base_station_t *base)
+{
+    // Version 0, the settings in use, from the first; then the keys
+    uint8_t payload[4 + 4 * 3 * SIGNAL_SETTINGS_COUNT] = { 0 };
+    size_t at = 4;
+    for (int i = 0; i < SIGNAL_SETTINGS_COUNT; i++) {
+        for (int which = 0; which < 3; which++, at += 4) put_u32_le(payload + at, SIGNAL_SETTINGS[i].keys[which]);
+    }
+    send_ubx(base, UBX_CLASS_CFG, UBX_CFG_VALGET, payload, (uint16_t)at);
+}
+
+static void send_second_band(base_station_t *base)
+{
+    // Both bands of every constellation, since a second band is refused without its first, but the constellations
+    // themselves left as they are
+    uint8_t payload[4 + 5 * 2 * SIGNAL_SETTINGS_COUNT] = { 0 };
+    payload[1] = BANDS_LAYERS[base->bands_layer];
+    size_t at = 4;
+    for (int i = 0; i < SIGNAL_SETTINGS_COUNT; i++) {
+        for (int which = 1; which <= 2; which++, at += 5) {
+            put_u32_le(payload + at, SIGNAL_SETTINGS[i].keys[which]);
+            payload[at + 4] = 1;
+        }
+    }
+    send_ubx(base, UBX_CLASS_CFG, UBX_CFG_VALSET, payload, (uint16_t)at);
+    base->bands_request = BASE_BANDS_WAITING;
+    base->bands_deadline_ms = base->now_ms + ACK_TIMEOUT_MS;
+}
+
+static void bands_answered(base_station_t *base, bool accepted)
+{
+    if (accepted) {
+        base->bands_request = (BANDS_LAYERS[base->bands_layer] & LAYER_FLASH) ? BASE_BANDS_SAVED : BASE_BANDS_ON_FOR_NOW;
+        base->signal_settings_due = true;
+    } else if (base->bands_layer + 1 < BANDS_LAYER_COUNT) {
+        // A module that will not save it can still have it until it loses power
+        base->bands_layer++;
+        base->bands_attempts = 0;
+        base->bands_request = BASE_BANDS_WANTED;
+    } else {
+        base->bands_request = BASE_BANDS_REFUSED;
+    }
+}
+
+static void run_bands_request(base_station_t *base)
+{
+    if (base->bands_request == BASE_BANDS_WAITING && (int32_t)(base->now_ms - base->bands_deadline_ms) >= 0) {
+        base->bands_request = ++base->bands_attempts >= ACK_ATTEMPTS ? BASE_BANDS_REFUSED : BASE_BANDS_WANTED;
+    }
+    if (base->bands_request == BASE_BANDS_WANTED) send_second_band(base);
+}
+
+// ------------------------------------------------------------------------------------------------
 // Messages from the module
 // ------------------------------------------------------------------------------------------------
 
@@ -115,9 +285,17 @@ static void on_ubx(void *ctx, uint8_t cls, uint8_t id, const uint8_t *payload, u
     if (cls == UBX_CLASS_CFG || cls == UBX_CLASS_ACK) base->baud_replied = true;
 
     if (cls == UBX_CLASS_ACK && length >= 2) {
+        if (base->bands_request == BASE_BANDS_WAITING && payload[0] == UBX_CLASS_CFG && payload[1] == UBX_CFG_VALSET) {
+            bands_answered(base, id == UBX_ACK_ACK);
+        }
         if (base->ack_state == ACK_WAITING && payload[0] == base->ack_class && payload[1] == base->ack_id) {
             base->ack_state = (id == UBX_ACK_ACK) ? ACK_DONE : ACK_REFUSED;
         }
+        return;
+    }
+
+    if (cls == UBX_CLASS_CFG && id == UBX_CFG_VALGET) {
+        read_signal_settings(base, payload, length);
         return;
     }
 
@@ -156,6 +334,8 @@ static void on_ubx(void *ctx, uint8_t cls, uint8_t id, const uint8_t *payload, u
         }
         base->have_sky = true;
         base->sky_at_ms = base->now_ms;
+    } else if (id == UBX_NAV_SIG && length >= 8 && length >= 8u + 16u * payload[5]) {
+        read_signals(base, payload);
     }
 }
 
@@ -307,7 +487,14 @@ static void poll_status(base_station_t *base)
     if (base->phase == PHASE_SURVEY) poll_nav(base, UBX_NAV_SVIN);
     poll_nav(base, UBX_NAV_HPPOSLLH);
     poll_nav(base, UBX_NAV_PVT);
-    if (base->status_polls++ % SKY_POLL_EVERY == 0) poll_nav(base, UBX_NAV_SAT);
+
+    uint32_t poll = base->status_polls++;
+    if (poll % SKY_POLL_EVERY == 0) poll_nav(base, UBX_NAV_SAT);
+    if (poll % SKY_POLL_EVERY == SIGNALS_POLL_OFFSET) poll_nav(base, UBX_NAV_SIG);
+    if (base->signal_settings_due || poll % SIGNAL_SETTINGS_POLL_EVERY == 1) {
+        base->signal_settings_due = false;
+        poll_signal_settings(base);
+    }
 }
 
 // ------------------------------------------------------------------------------------------------
@@ -453,6 +640,7 @@ void base_tick(base_station_t *base, uint32_t now_ms)
         check_module_alive(base);
         if (base->phase != PHASE_SURVEY) break;
         poll_status(base);
+        run_bands_request(base);
         if (base->survey_valid) set_phase(base, PHASE_ENABLE_RTCM);
         break;
 
@@ -465,6 +653,7 @@ void base_tick(base_station_t *base, uint32_t now_ms)
         check_module_alive(base);
         if (base->phase != PHASE_RUN) break;
         poll_status(base);
+        run_bands_request(base);
         maintain_caster(base);
         break;
 
@@ -529,6 +718,18 @@ bool base_set_fixed(base_station_t *base, const char *latitude, const char *long
     return true;
 }
 
+bool base_enable_second_band(base_station_t *base)
+{
+    // Only to a module that is configured and answering, and not twice at once
+    if (base->phase != PHASE_RUN && base->phase != PHASE_SURVEY) return false;
+    if (base->bands_request == BASE_BANDS_WANTED || base->bands_request == BASE_BANDS_WAITING) return false;
+
+    base->bands_request = BASE_BANDS_WANTED;
+    base->bands_layer = 0;
+    base->bands_attempts = 0;
+    return true;
+}
+
 // ------------------------------------------------------------------------------------------------
 // Status
 // ------------------------------------------------------------------------------------------------
@@ -566,6 +767,32 @@ static void exact_decimal(char *out, size_t capacity, int64_t value, int decimal
              (unsigned long long)(magnitude / scale), decimals, (unsigned long long)(magnitude % scale));
 }
 
+// Whether the module tracks the second band of the constellations it uses
+static const char *second_band_setting(const base_station_t *base)
+{
+    if (!base->have_signal_settings) return "unknown";
+
+    int judged = 0, on = 0;
+    for (int i = 0; i < SIGNAL_SETTINGS_COUNT; i++) {
+        if (!SIGNAL_SETTINGS[i].judged || !setting_on(base, i, 0)) continue;
+        judged++;
+        if (setting_on(base, i, 2)) on++;
+    }
+    return judged > 0 && on == judged ? "on" : on > 0 ? "partly" : "off";
+}
+
+static const char *bands_request_name(base_bands_request_t request)
+{
+    switch (request) {
+    case BASE_BANDS_WANTED:
+    case BASE_BANDS_WAITING: return "working";
+    case BASE_BANDS_SAVED: return "saved";
+    case BASE_BANDS_ON_FOR_NOW: return "on_until_power_off";
+    case BASE_BANDS_REFUSED: return "refused";
+    default: return "none";
+    }
+}
+
 int base_status_json(const base_station_t *base, char *out, size_t capacity)
 {
     static const struct { uint32_t flag; const char *name; } ERROR_NAMES[] = {
@@ -577,6 +804,7 @@ int base_status_json(const base_station_t *base, char *out, size_t capacity)
         { BASE_ERROR_BANNED, "NTRIP_BANNED" },
         { BASE_ERROR_RTCM_STALLED, "RTCM_OUTPUT_STALLED" },
         { BASE_ERROR_INVALID_POSITION, "INVALID_FIXED_POSITION" },
+        { BASE_ERROR_SINGLE_BAND, "SINGLE_BAND" },
     };
 
     char errors[200] = "";
@@ -606,6 +834,7 @@ int base_status_json(const base_station_t *base, char *out, size_t capacity)
         "\"survey_elapsed_s\":%u,\"survey_accuracy_m\":%.4f,\"survey_valid\":%s,"
         "\"direct_port\":%u,\"direct_rovers\":%d,"
         "\"caster_connected\":%s,\"caster_message\":\"%s\",\"sent_age_ms\":%d,\"frames_sent\":%u,\"bytes_sent\":%u,"
+        "\"bands\":{\"second\":\"%s\",\"l1\":[%u,%u,%u],\"l2\":[%u,%u,%u]},"
         "\"rtcm_errors\":%u,\"errors\":[%s]}",
         phase_name(base->phase),
         base->mode.kind == BASE_MODE_FIXED ? "fixed" : "survey",
@@ -618,6 +847,9 @@ int base_status_json(const base_station_t *base, char *out, size_t capacity)
         caster_is_streaming(&base->caster) ? "true" : "false", message,
         base->sent_any ? (int)(base->now_ms - base->last_sent_ms) : -1,
         (unsigned)base->frames_sent, (unsigned)base->bytes_sent,
+        second_band_setting(base),
+        base->first_band.heard, base->first_band.used, base->first_band.median_cno,
+        base->second_band.heard, base->second_band.used, base->second_band.median_cno,
         (unsigned)base->stream.rtcm_errors, errors);
 }
 
@@ -630,6 +862,30 @@ int base_sky_json(const base_station_t *base, char *out, size_t capacity)
         const base_satellite_t *s = &base->sky[i];
         used += snprintf(out + used, capacity - (size_t)used, "%s[%u,%u,%u,%d,%d,%d]", i ? "," : "",
                          s->gnss, s->id, s->cno, s->elevation, s->azimuth, s->used ? 1 : 0);
+    }
+
+    if (used >= 0 && (size_t)used < capacity) used += snprintf(out + used, capacity - (size_t)used, "]}");
+    return used;
+}
+
+int base_signals_json(const base_station_t *base, char *out, size_t capacity)
+{
+    int used = snprintf(out, capacity, "{\"age_ms\":%d,\"settings_age_ms\":%d,\"second_band\":\"%s\",\"request\":\"%s\",\"settings\":[",
+                        base->have_signals ? (int)(base->now_ms - base->signals_at_ms) : -1,
+                        base->have_signal_settings ? (int)(base->now_ms - base->signal_settings_at_ms) : -1,
+                        second_band_setting(base), bands_request_name(base->bands_request));
+
+    for (int i = 0; base->have_signal_settings && i < SIGNAL_SETTINGS_COUNT && used >= 0 && (size_t)used < capacity; i++) {
+        used += snprintf(out + used, capacity - (size_t)used, "%s[%u,%d,%d,%d]", i ? "," : "", SIGNAL_SETTINGS[i].gnss,
+                         setting_on(base, i, 0), setting_on(base, i, 1), setting_on(base, i, 2));
+    }
+
+    if (used >= 0 && (size_t)used < capacity) used += snprintf(out + used, capacity - (size_t)used, "],\"signals\":[");
+
+    for (uint8_t i = 0; i < base->signal_count && used >= 0 && (size_t)used < capacity; i++) {
+        const base_signal_t *s = &base->signals[i];
+        used += snprintf(out + used, capacity - (size_t)used, "%s[%u,%u,%u,%u,%d]", i ? "," : "",
+                         s->gnss, s->id, s->band, s->cno, s->used ? 1 : 0);
     }
 
     if (used >= 0 && (size_t)used < capacity) used += snprintf(out + used, capacity - (size_t)used, "]}");

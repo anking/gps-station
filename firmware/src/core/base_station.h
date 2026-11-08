@@ -50,8 +50,10 @@ typedef struct {
 #define BASE_ERROR_BANNED (1u << 5)
 #define BASE_ERROR_RTCM_STALLED (1u << 6)
 #define BASE_ERROR_INVALID_POSITION (1u << 7)
+#define BASE_ERROR_SINGLE_BAND (1u << 8)
 
 #define BASE_MAX_SATELLITES 64
+#define BASE_MAX_SIGNALS 160
 
 typedef struct {
     uint8_t gnss;           // u-blox numbering: 0 GPS, 1 SBAS, 2 Galileo, 3 BeiDou, 5 QZSS, 6 GLONASS
@@ -61,6 +63,32 @@ typedef struct {
     int16_t azimuth;        // Degrees
     bool used;              // In the position
 } base_satellite_t;
+
+// One signal from one satellite. A rover gets an RTK fix far sooner and more reliably with two bands from each
+// satellite, and the corrections carry only the bands the base itself hears.
+typedef struct {
+    uint8_t gnss;
+    uint8_t id;
+    uint8_t band;           // 1 for L1, E1 and B1I; 2 for the second band, L2, E5b and B2I; 0 for any other
+    uint8_t cno;            // dB-Hz
+    bool used;              // In the position
+} base_signal_t;
+
+typedef struct {
+    uint8_t heard;
+    uint8_t used;
+    uint8_t median_cno;     // Of those heard, dB-Hz
+} base_band_t;
+
+// Turning the second band on, which is asked for from the page
+typedef enum {
+    BASE_BANDS_IDLE,
+    BASE_BANDS_WANTED,
+    BASE_BANDS_WAITING,
+    BASE_BANDS_SAVED,       // On, and kept by the module through a power cut
+    BASE_BANDS_ON_FOR_NOW,  // On until the module loses power: it would not save it
+    BASE_BANDS_REFUSED,
+} base_bands_request_t;
 
 typedef struct {
     base_hal_t hal;
@@ -121,6 +149,22 @@ typedef struct {
     uint8_t sky_count;
     bool have_sky;
     uint32_t sky_at_ms;
+    base_signal_t signals[BASE_MAX_SIGNALS];
+    uint8_t signal_count;
+    bool have_signals;
+    uint32_t signals_at_ms;
+    base_band_t first_band;
+    base_band_t second_band;
+    uint8_t single_band_readings;   // In a row, so the second band coming back after a restart is not a warning
+    // Which constellations and bands the module tracks, one bit for each of the module's settings that are read
+    uint32_t signal_settings;
+    bool have_signal_settings;
+    bool signal_settings_due;
+    uint32_t signal_settings_at_ms;
+    base_bands_request_t bands_request;
+    int bands_layer;
+    int bands_attempts;
+    uint32_t bands_deadline_ms;
     uint32_t survey_mean_accuracy_tenth_mm;
     bool survey_valid;
     bool rtcm_seen;
@@ -151,3 +195,13 @@ int base_status_json(const base_station_t *base, char *out, size_t capacity);
 // Writes the satellites the module sees, as {"age_ms":N,"sats":[[gnss,id,cno,elevation,azimuth,used],...]}.
 // Same return as base_status_json.
 int base_sky_json(const base_station_t *base, char *out, size_t capacity);
+
+// Asks the module to track the second band of every constellation, and to keep that through a power cut. Tracking
+// restarts, so corrections pause for a few seconds. Returns false if it cannot be asked now.
+bool base_enable_second_band(base_station_t *base);
+
+// Writes each signal the module hears and the module's band settings:
+//   {"age_ms":N,"settings_age_ms":N,"second_band":"on|off|partly|unknown","request":"...",
+//    "settings":[[gnss,constellation on,first band on,second band on],...],"signals":[[gnss,id,band,cno,used],...]}
+// Same return as base_status_json.
+int base_signals_json(const base_station_t *base, char *out, size_t capacity);

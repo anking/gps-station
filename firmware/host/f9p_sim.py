@@ -17,10 +17,22 @@ import tty
 
 SYNC = b"\xb5\x62"
 CLS_NAV, CLS_ACK, CLS_CFG = 0x01, 0x05, 0x06
-ID_CFG_PRT, ID_CFG_MSG, ID_CFG_RATE, ID_CFG_TMODE3 = 0x00, 0x01, 0x08, 0x71
-ID_NAV_PVT, ID_NAV_HPPOSLLH, ID_NAV_SVIN, ID_NAV_SAT = 0x07, 0x14, 0x3B, 0x35
+ID_CFG_PRT, ID_CFG_MSG, ID_CFG_RATE, ID_CFG_TMODE3, ID_CFG_VALSET, ID_CFG_VALGET = 0x00, 0x01, 0x08, 0x71, 0x8A, 0x8B
+ID_NAV_PVT, ID_NAV_HPPOSLLH, ID_NAV_SVIN, ID_NAV_SAT, ID_NAV_SIG = 0x07, 0x14, 0x3B, 0x35, 0x43
 RTCM_MSG_CLASS = 0xF5
 RTCM_TYPES = {0x05: 1005, 0x4A: 1074, 0x54: 1084, 0x5E: 1094, 0x7C: 1124}
+
+# CFG-SIGNAL keys for each constellation: the constellation, its first band and its second band, and the u-blox
+# signal numbers of those two bands
+SIGNAL_KEYS = {
+    0: ((0x1031001F, 0x10310001, 0x10310003), (0, 3)),  # GPS
+    2: ((0x10310021, 0x10310007, 0x1031000A), (0, 5)),  # Galileo
+    3: ((0x10310022, 0x1031000D, 0x1031000E), (0, 2)),  # BeiDou
+    6: ((0x10310025, 0x10310018, 0x1031001A), (0, 2)),  # GLONASS
+    5: ((0x10310024, 0x10310012, 0x10310015), (0, 4)),  # QZSS
+}
+SECOND_BAND_KEYS = [keys[2] for keys, _ in SIGNAL_KEYS.values()]
+LAYER_FLASH = 0x04
 
 
 def ubx_frame(cls, msg_id, payload=b""):
@@ -51,7 +63,10 @@ def rtcm_frame(message_type, length=60):
 
 
 class F9pSim:
-    def __init__(self, survey_seconds=3.0, latitude=40.1234567, longitude=-80.1234567, height_m=300.0):
+    def __init__(self, survey_seconds=3.0, latitude=40.1234567, longitude=-80.1234567, height_m=300.0, second_band=True,
+                 antenna_second_band=True):
+        """second_band: whether the module's saved settings track the second band. antenna_second_band: whether the
+        antenna passes it, so whether anything is heard on it when it is tracked."""
         self.survey_seconds = survey_seconds
         self.latitude = latitude
         self.longitude = longitude
@@ -71,6 +86,15 @@ class F9pSim:
         self.rtcm_rates = {}
         self.rate_ms = 1000
         self.port_config = None
+
+        # Settings kept through a power cut, and those in use
+        self.saved_signals = {key: 1 for keys, _ in SIGNAL_KEYS.values() for key in keys}
+        for key in SECOND_BAND_KEYS:
+            self.saved_signals[key] = 1 if second_band else 0
+        self.signals = dict(self.saved_signals)
+        self.antenna_second_band = antenna_second_band
+        self.refuse_flash = False
+        self.valset_layers = []
 
         self.rtcm_sent_frames = []
         self.commands = []
@@ -100,6 +124,7 @@ class F9pSim:
         self.rtcm_rates = {}
         self.survey_started = None
         self.rate_ms = 1000
+        self.signals = dict(self.saved_signals)
 
     def close(self):
         self.running = False
@@ -152,7 +177,7 @@ class F9pSim:
             self._handle_cfg(msg_id, payload)
         elif cls == CLS_NAV:
             handler = {ID_NAV_PVT: self._nav_pvt, ID_NAV_HPPOSLLH: self._nav_hpposllh, ID_NAV_SVIN: self._nav_svin,
-                       ID_NAV_SAT: self._nav_sat}.get(msg_id)
+                       ID_NAV_SAT: self._nav_sat, ID_NAV_SIG: self._nav_sig}.get(msg_id)
             if handler:
                 self._write(ubx_frame(CLS_NAV, msg_id, handler()))
 
@@ -180,6 +205,25 @@ class F9pSim:
             else:
                 self.tmode3 = bytearray(payload)
                 self.survey_started = time.monotonic() if self.tmode3[2] == 1 else None
+        elif msg_id == ID_CFG_VALGET:
+            keys = [struct.unpack_from("<I", payload, at)[0] for at in range(4, len(payload) - 3, 4)]
+            if any(key not in self.signals for key in keys):
+                # One key it does not know and the whole question is refused
+                self._write(ubx_frame(CLS_ACK, 0x00, bytes([CLS_CFG, msg_id])))
+                return
+            answer = bytes([1, payload[1], 0, 0]) + b"".join(struct.pack("<IB", key, self.signals[key]) for key in keys)
+            self._write(ubx_frame(CLS_CFG, ID_CFG_VALGET, answer))
+        elif msg_id == ID_CFG_VALSET:
+            layers = payload[1]
+            self.valset_layers.append(layers)
+            changes = {struct.unpack_from("<I", payload, at)[0]: payload[at + 4] for at in range(4, len(payload) - 4, 5)}
+            if (self.refuse_flash and layers & LAYER_FLASH) or any(key not in self.signals for key in changes):
+                self._write(ubx_frame(CLS_ACK, 0x00, bytes([CLS_CFG, msg_id])))
+                return
+            if layers & 0x01:
+                self.signals.update(changes)
+            if layers & LAYER_FLASH:
+                self.saved_signals.update(changes)
         self._write(ubx_frame(CLS_ACK, 0x01, bytes([CLS_CFG, msg_id])))
 
     def _nav_pvt(self):
@@ -206,6 +250,27 @@ class F9pSim:
             gnss = (0, 2, 3, 6)[i % 4]
             struct.pack_into("<BBBbhhI", message, 8 + 12 * i, gnss, i + 1, 30 + i % 20, 10 + (i * 7) % 80, (i * 37) % 360, 0,
                              0x08 if i % 3 else 0)
+        return bytes(message)
+
+    def _nav_sig(self):
+        """Six satellites of each of four constellations on the first band, and on the second where it is tracked and
+        the antenna passes it, with an SBAS signal and one searched for but not heard."""
+        signals = []
+        for gnss in (0, 2, 3, 6):
+            (on, first, second), (first_id, second_id) = SIGNAL_KEYS[gnss]
+            if not self.signals[on]:
+                continue
+            for sv in range(1, 7):
+                if self.signals[first]:
+                    signals.append((gnss, sv, first_id, 38 + sv, 0x08 | 0x10))
+                if self.signals[second] and self.antenna_second_band:
+                    signals.append((gnss, sv, second_id, 30 + sv, 0x10))
+        signals.append((1, 133, 0, 30, 0))
+        signals.append((0, 30, 0, 0, 0))
+        message = bytearray(8 + 16 * len(signals))
+        message[4], message[5] = 0, len(signals)
+        for i, (gnss, sv, sig, cno, flags) in enumerate(signals):
+            struct.pack_into("<BBBBhBBBBH", message, 8 + 16 * i, gnss, sv, sig, 0, 0, cno, 7, 0, 0, flags)
         return bytes(message)
 
     def _survey_elapsed(self):

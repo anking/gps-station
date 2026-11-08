@@ -15,7 +15,7 @@ import threading
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from f9p_sim import F9pSim, crc24q  # noqa: E402
+from f9p_sim import ID_CFG_VALSET, SECOND_BAND_KEYS, F9pSim, crc24q  # noqa: E402
 
 HOST = None
 RESULTS = {}
@@ -155,6 +155,7 @@ class Base:
     def __init__(self, sim, caster, *args):
         self.lines = []
         self.errors = []
+        self.signals = {}
         self.process = subprocess.Popen(
             [HOST, "--serial", sim.path, "--host", "127.0.0.1", "--port", str(caster.port), "--mount", "TEST", "--password", "secret", *args],
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, bufsize=1)
@@ -163,7 +164,10 @@ class Base:
 
     def _read_status(self):
         for line in self.process.stdout:
-            self.lines.append(json.loads(line))
+            if line.startswith("SIGNALS "):
+                self.signals = json.loads(line[len("SIGNALS "):])
+            else:
+                self.lines.append(json.loads(line))
 
     def _read_errors(self):
         for line in self.process.stderr:
@@ -529,7 +533,65 @@ def anything_else_is_turned_away():
         base.stop(), sim.close(), caster.close()
 
 
+def turns_the_second_band_on():
+    # As found on the real base: a module set to L1 only, so the corrections carried nothing else
+    caster, sim = Caster(), F9pSim(survey_seconds=1, second_band=False)
+    base = Base(sim, caster, "--survey", "3000:1")
+    try:
+        wait_for(lambda: base.signals.get("second_band") == "off", 15, "the band settings read")
+        check(base.signals["settings"][0] == [0, 1, 1, 0], f"GPS settings {base.signals['settings']}")
+        wait_for(lambda: "SINGLE_BAND" in base.status.get("errors", []), 30, "the single band warning")
+        check(base.status["bands"]["second"] == "off", f"bands {base.status['bands']}")
+        check(base.status["bands"]["l1"] == [24, 24, 42] and base.status["bands"]["l2"] == [0, 0, 0], f"bands {base.status['bands']}")
+        check(base.signals["request"] == "none", f"request {base.signals}")
+
+        before = len(caster.received)
+        base.send("SECOND_BAND")
+        wait_for(lambda: base.signals.get("request") == "saved", 8, "the module saving it")
+        check(sim.valset_layers == [0x07], f"layers {sim.valset_layers}")
+        check(all(sim.saved_signals[key] == 1 for key in SECOND_BAND_KEYS), "kept through a power cut")
+        wait_for(lambda: base.signals.get("second_band") == "on", 8, "the settings read again")
+        wait_for(lambda: "SINGLE_BAND" not in base.status.get("errors", []), 10, "the warning gone")
+        check(base.status["bands"]["l2"][0] == 24, f"second band heard {base.status['bands']}")
+        # The list is printed less often than the status
+        wait_for(lambda: any(s[2] == 2 for s in base.signals["signals"]), 5, "second band signals in the list")
+        wait_for(lambda: len(caster.received) > before + 300, 10, "corrections carrying on")
+    finally:
+        base.stop(), sim.close(), caster.close()
+
+
+def second_band_on_until_power_off_when_the_module_will_not_save_it():
+    caster, sim = Caster(), F9pSim(survey_seconds=1, second_band=False)
+    sim.refuse_flash = True
+    base = Base(sim, caster, "--survey", "3000:1")
+    try:
+        wait_for(lambda: base.signals.get("second_band") == "off", 15, "the band settings read")
+        base.send("SECOND_BAND")
+        wait_for(lambda: base.signals.get("request") == "on_until_power_off", 8, "the module taking it for now")
+        check(sim.valset_layers == [0x07, 0x01], f"layers {sim.valset_layers}")
+        check(all(sim.signals[key] == 1 for key in SECOND_BAND_KEYS), "on in use")
+        check(all(sim.saved_signals[key] == 0 for key in SECOND_BAND_KEYS), "not saved")
+        wait_for(lambda: base.signals.get("second_band") == "on", 8, "the settings read again")
+    finally:
+        base.stop(), sim.close(), caster.close()
+
+
+def an_antenna_for_l1_only_still_warns():
+    # The setting is right, but nothing comes through on the second band
+    caster, sim = Caster(), F9pSim(survey_seconds=1, antenna_second_band=False)
+    base = Base(sim, caster, "--survey", "3000:1")
+    try:
+        wait_for(lambda: base.signals.get("second_band") == "on", 15, "the band settings read")
+        wait_for(lambda: "SINGLE_BAND" in base.status.get("errors", []), 30, "the single band warning")
+        check(not any(c[1] == ID_CFG_VALSET for c in sim.commands), "nothing changed on the module by itself")
+    finally:
+        base.stop(), sim.close(), caster.close()
+
+
 SCENARIOS = [
+    turns_the_second_band_on,
+    second_band_on_until_power_off_when_the_module_will_not_save_it,
+    an_antenna_for_l1_only_still_warns,
     rover_gets_whole_frames_alongside_the_caster,
     rover_is_served_with_no_caster_set_up,
     rover_carries_on_when_the_caster_refuses,

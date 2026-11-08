@@ -3,6 +3,8 @@
 // Prints the status as a JSON line twice a second. Reads commands from stdin:
 //   SURVEY <accuracy_mm> <seconds>
 //   FIXED <latitude> <longitude> <height>
+//   SECOND_BAND
+// and prints the signals as a line of JSON, starting SIGNALS, every 2 seconds.
 #include <errno.h>
 #include <fcntl.h>
 #include <poll.h>
@@ -102,6 +104,7 @@ int main(int argc, char **argv)
     fcntl(STDIN_FILENO, F_SETFL, fcntl(STDIN_FILENO, F_GETFL, 0) | O_NONBLOCK);
 
     uint32_t next_status = 0;
+    uint32_t next_signals = 0;
     char line[256];
     size_t line_used = 0;
 
@@ -132,6 +135,8 @@ int main(int argc, char **argv)
                     base_set_survey(&base, accuracy, seconds);
                 } else if (sscanf(line, "FIXED %31s %31s %31s", lat, lon, height) == 3) {
                     if (!base_set_fixed(&base, lat, lon, height, &error)) fprintf(stderr, "refused: %s\n", error);
+                } else if (strcmp(line, "SECOND_BAND") == 0) {
+                    if (!base_enable_second_band(&base)) fprintf(stderr, "refused: second band\n");
                 }
             }
         }
@@ -144,6 +149,13 @@ int main(int argc, char **argv)
             base_status_json(&base, json, sizeof(json));
             puts(json);
             next_status = now + 500;
+        }
+
+        if ((int32_t)(now - next_signals) >= 0) {
+            static char signals[3400];
+            base_signals_json(&base, signals, sizeof(signals));
+            printf("SIGNALS %s\n", signals);
+            next_signals = now + 2000;
         }
     }
 }

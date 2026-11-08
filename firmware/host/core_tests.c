@@ -172,9 +172,9 @@ static void test_stream(void)
 
     // A message too long to keep is stepped over and the stream stays in step
     reset_counts(&stream);
-    uint8_t header[] = { 0xB5, 0x62, 0x0A, 0x04, 0x2C, 0x01 }; // 300 bytes
+    uint8_t header[] = { 0xB5, 0x62, 0x0A, 0x04, 0x00, 0x10 }; // 4096 bytes, more than the longest signal list
     gnss_stream_feed(&stream, header, sizeof(header));
-    static uint8_t filler[302];
+    static uint8_t filler[4096 + 2];
     gnss_stream_feed(&stream, filler, sizeof(filler));
     length = ubx_frame(frame, sizeof(frame), 0x01, 0x07, payload, 3);
     gnss_stream_feed(&stream, frame, length);
@@ -230,12 +230,17 @@ static void test_not_configured(void)
 
 // --- What the page shows --------------------------------------------------------------------------
 
-static void feed_ubx(base_station_t *base, uint8_t id, const uint8_t *payload, uint16_t length)
+static void feed_message(base_station_t *base, uint8_t cls, uint8_t id, const uint8_t *payload, uint16_t length)
 {
-    uint8_t frame[1100];
-    size_t total = ubx_frame(frame, sizeof(frame), UBX_CLASS_NAV, id, payload, length);
+    static uint8_t frame[UBX_MAX_PAYLOAD + UBX_OVERHEAD];
+    size_t total = ubx_frame(frame, sizeof(frame), cls, id, payload, length);
     CHECK(total > 0);
     base_on_serial(base, frame, total);
+}
+
+static void feed_ubx(base_station_t *base, uint8_t id, const uint8_t *payload, uint16_t length)
+{
+    feed_message(base, UBX_CLASS_NAV, id, payload, length);
 }
 
 static void put_le32(uint8_t *p, int32_t value)
@@ -317,6 +322,151 @@ static void test_page_data(void)
     CHECK(length > 0 && (size_t)length < sizeof(json));
 }
 
+// --- Bands -------------------------------------------------------------------------------------
+
+static void put_signal(uint8_t *message, int index, uint8_t gnss, uint8_t id, uint8_t signal, uint8_t cno, bool used)
+{
+    uint8_t *entry = message + 8 + 16 * index;
+    memset(entry, 0, 16);
+    entry[0] = gnss;
+    entry[1] = id;
+    entry[2] = signal;
+    entry[6] = cno;
+    entry[10] = used ? 0x08 : 0x00;
+    message[5] = (uint8_t)(index + 1);
+}
+
+// A sky with this many GPS satellites heard on L1, and the first of them on L2 as well
+static void feed_sky_bands(base_station_t *base, int first, int second)
+{
+    static uint8_t message[8 + 16 * 64];
+    memset(message, 0, sizeof(message));
+    int index = 0;
+    for (int i = 0; i < first; i++) put_signal(message, index++, 0, (uint8_t)(i + 1), 0, 40, true);
+    for (int i = 0; i < second; i++) put_signal(message, index++, 0, (uint8_t)(i + 1), 3, 35, false);
+    feed_ubx(base, UBX_NAV_SIG, message, (uint16_t)(8 + 16 * index));
+}
+
+// The module's answer to the band settings asked for, with the second band of the constellations given switched off
+static void feed_band_settings(base_station_t *base, bool gps_second, bool others_second, bool qzss_second, int leave_out)
+{
+    static const uint32_t KEYS[][3] = {
+        { 0x1031001F, 0x10310001, 0x10310003 }, { 0x10310021, 0x10310007, 0x1031000A }, { 0x10310022, 0x1031000D, 0x1031000E },
+        { 0x10310025, 0x10310018, 0x1031001A }, { 0x10310024, 0x10310012, 0x10310015 },
+    };
+    uint8_t payload[4 + 5 * 15] = { 1, 0, 0, 0 };
+    size_t at = 4;
+    for (int i = 0; i < 5; i++) {
+        for (int which = 0; which < 3; which++) {
+            if (3 * i + which == leave_out) continue;
+            put_le32(payload + at, (int32_t)KEYS[i][which]);
+            payload[at + 4] = which < 2 ? 1 : i == 0 ? gps_second : i == 4 ? qzss_second : others_second;
+            at += 5;
+        }
+    }
+    feed_message(base, UBX_CLASS_CFG, UBX_CFG_VALGET, payload, (uint16_t)at);
+}
+
+static void test_bands(void)
+{
+    static base_station_t base;
+    base_hal_t hal = { .serial_write = no_write, .serial_set_baud = no_baud, .network_ready = no_network };
+    base_caster_settings_t settings = { .port = 2101 };
+    base_mode_t mode = { .kind = BASE_MODE_SURVEY, .survey_accuracy_mm = 3000, .survey_seconds = 60 };
+    base_init(&base, &hal, &settings, &mode, 0);
+    base_tick(&base, 1000);
+
+    static char json[3400];
+    CHECK(base_signals_json(&base, json, sizeof(json)) > 0);
+    CHECK(strcmp(json, "{\"age_ms\":-1,\"settings_age_ms\":-1,\"second_band\":\"unknown\",\"request\":\"none\",\"settings\":[],\"signals\":[]}") == 0);
+
+    // Not until the module is found and configured
+    CHECK(!base_enable_second_band(&base));
+    CHECK(base.bands_request == BASE_BANDS_IDLE);
+
+    // Each band of each constellation, one signal searched for but not heard, and signals that are in no band
+    static uint8_t message[8 + 16 * 16];
+    memset(message, 0, sizeof(message));
+    put_signal(message, 0, 0, 1, 0, 40, true);      // GPS L1C/A
+    put_signal(message, 1, 0, 1, 3, 30, false);     // GPS L2C
+    put_signal(message, 2, 2, 5, 0, 44, true);      // Galileo E1
+    put_signal(message, 3, 2, 5, 5, 38, false);     // Galileo E5b
+    put_signal(message, 4, 3, 20, 0, 35, false);    // BeiDou B1I
+    put_signal(message, 5, 3, 20, 2, 0, false);     // BeiDou B2I, not heard
+    put_signal(message, 6, 6, 3, 0, 33, false);     // GLONASS L1
+    put_signal(message, 7, 6, 3, 2, 25, false);     // GLONASS L2
+    put_signal(message, 8, 1, 133, 0, 30, false);   // SBAS
+    put_signal(message, 9, 2, 5, 3, 30, false);     // Galileo E5a, which this module does not have
+    base_tick(&base, 2000);
+    feed_ubx(&base, UBX_NAV_SIG, message, 8 + 16 * 10);
+    base_tick(&base, 2300);
+
+    base_signals_json(&base, json, sizeof(json));
+    CHECK(strstr(json, "{\"age_ms\":300,") == json);
+    CHECK(strstr(json, "\"signals\":[[0,1,1,40,1],[0,1,2,30,0],[2,5,1,44,1],[2,5,2,38,0],[3,20,1,35,0],[6,3,1,33,0],[6,3,2,25,0],"
+                       "[1,133,0,30,0],[2,5,0,30,0]]}") != NULL);
+
+    base_status_json(&base, json, sizeof(json));
+    CHECK(strstr(json, "\"bands\":{\"second\":\"unknown\",\"l1\":[4,2,40],\"l2\":[3,0,30]}") != NULL);
+
+    // L1 only, as from an antenna made for it: a warning once it has lasted, so not while the second band comes back
+    feed_sky_bands(&base, 12, 0);
+    feed_sky_bands(&base, 12, 0);
+    base_status_json(&base, json, sizeof(json));
+    CHECK(strstr(json, "SINGLE_BAND") == NULL);
+    feed_sky_bands(&base, 12, 0);
+    base_status_json(&base, json, sizeof(json));
+    CHECK(strstr(json, "\"errors\":[\"NTRIP_NOT_CONFIGURED\",\"SINGLE_BAND\"]") != NULL);
+    CHECK(strstr(json, "\"l1\":[12,12,40],\"l2\":[0,0,0]") != NULL);
+
+    // Gone as soon as the second band is heard
+    feed_sky_bands(&base, 12, 9);
+    base_status_json(&base, json, sizeof(json));
+    CHECK(strstr(json, "SINGLE_BAND") == NULL);
+
+    // A weak second band is a warning too, but a sky with few satellites is not judged
+    for (int i = 0; i < 3; i++) feed_sky_bands(&base, 12, 5);
+    CHECK(base.errors & BASE_ERROR_SINGLE_BAND);
+    for (int i = 0; i < 3; i++) feed_sky_bands(&base, 7, 0);
+    CHECK(!(base.errors & BASE_ERROR_SINGLE_BAND));
+
+    // The module's settings: the second band off everywhere, as found on a base that sent L1 only
+    feed_band_settings(&base, false, false, false, -1);
+    base_signals_json(&base, json, sizeof(json));
+    CHECK(strstr(json, "\"second_band\":\"off\"") != NULL);
+    CHECK(strstr(json, "\"settings\":[[0,1,1,0],[2,1,1,0],[3,1,1,0],[6,1,1,0],[5,1,1,0]]") != NULL);
+    base_status_json(&base, json, sizeof(json));
+    CHECK(strstr(json, "\"bands\":{\"second\":\"off\",") != NULL);
+
+    feed_band_settings(&base, true, false, false, -1);
+    base_signals_json(&base, json, sizeof(json));
+    CHECK(strstr(json, "\"second_band\":\"partly\"") != NULL);
+
+    // QZSS is not seen here, so its second band does not count
+    feed_band_settings(&base, true, true, false, -1);
+    base_signals_json(&base, json, sizeof(json));
+    CHECK(strstr(json, "\"second_band\":\"on\"") != NULL);
+
+    // An answer missing a setting changes nothing
+    feed_band_settings(&base, false, false, false, 5);
+    base_signals_json(&base, json, sizeof(json));
+    CHECK(strstr(json, "\"second_band\":\"on\"") != NULL);
+
+    // The longest signal list the module can send, of the longest numbers, still fits the page's buffer
+    static uint8_t full[8 + 16 * 255];
+    memset(full, 0xFF, sizeof(full));
+    full[5] = 255;
+    feed_ubx(&base, UBX_NAV_SIG, full, sizeof(full));
+    CHECK(base.signal_count == BASE_MAX_SIGNALS);
+    base.bands_request = BASE_BANDS_ON_FOR_NOW;
+    int length = base_signals_json(&base, json, sizeof(json));
+    CHECK(length > 0 && (size_t)length < sizeof(json));
+
+    // The status still leaves the web page and MQTT their margin
+    length = base_status_json(&base, json, sizeof(json));
+    CHECK(length > 0 && length < 1100);
+}
+
 // --- Direct link -------------------------------------------------------------------------------
 
 static void test_direct_requests(void)
@@ -382,6 +532,7 @@ int main(void)
     test_caster_protocol();
     test_not_configured();
     test_page_data();
+    test_bands();
     test_direct_requests();
     test_direct_drops_a_stuck_rover();
     test_update_policy();

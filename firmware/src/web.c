@@ -185,6 +185,34 @@ static esp_err_t get_sky(httpd_req_t *req)
     return httpd_resp_send(req, json, length);
 }
 
+static esp_err_t get_signals(httpd_req_t *req)
+{
+    if (!authorized(req)) return ESP_OK;
+
+    // Up to 160 signals of at most 18 characters each, and the settings
+    static char json[3400];
+    xSemaphoreTake(lock, portMAX_DELAY);
+    int length = base_signals_json(base, json, sizeof(json));
+    xSemaphoreGive(lock);
+
+    if (length <= 0 || length >= (int)sizeof(json)) return httpd_resp_send_500(req);
+
+    httpd_resp_set_type(req, "application/json");
+    return httpd_resp_send(req, json, length);
+}
+
+static esp_err_t post_bands(httpd_req_t *req)
+{
+    if (!authorized(req) || !from_our_page(req)) return ESP_OK;
+
+    xSemaphoreTake(lock, portMAX_DELAY);
+    bool asked = base_enable_second_band(base);
+    xSemaphoreGive(lock);
+
+    return asked ? reply(req, "200 OK", "Turning the second band on. Corrections pause for a few seconds.")
+                 : reply(req, "409 Conflict", "Not now: the GPS module is starting, or already being changed.");
+}
+
 static esp_err_t get_status(httpd_req_t *req)
 {
     if (!authorized(req)) return ESP_OK;
@@ -395,7 +423,7 @@ void web_start(base_station_t *base_station, SemaphoreHandle_t base_lock, const 
 
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
     config.stack_size = 8192;
-    config.max_uri_handlers = 12;
+    config.max_uri_handlers = 16;
     config.lru_purge_enable = true;
 
     httpd_handle_t server = NULL;
@@ -405,6 +433,8 @@ void web_start(base_station_t *base_station, SemaphoreHandle_t base_lock, const 
         { .uri = "/", .method = HTTP_GET, .handler = get_index },
         { .uri = "/api/status", .method = HTTP_GET, .handler = get_status },
         { .uri = "/api/sky", .method = HTTP_GET, .handler = get_sky },
+        { .uri = "/api/signals", .method = HTTP_GET, .handler = get_signals },
+        { .uri = "/api/bands", .method = HTTP_POST, .handler = post_bands },
         { .uri = "/leaflet-1.9.4.js", .method = HTTP_GET, .handler = get_leaflet_js },
         { .uri = "/leaflet-1.9.4.css", .method = HTTP_GET, .handler = get_leaflet_css },
         { .uri = "/api/settings", .method = HTTP_GET, .handler = get_settings },

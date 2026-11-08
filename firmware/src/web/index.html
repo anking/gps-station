@@ -105,6 +105,12 @@ details.explain p { margin: 6px 0 0; }
 #bars div.unused i { opacity: .35; }
 #bars div span { position: absolute; top: calc(100% + 4px); left: 50%; writing-mode: vertical-rl; transform: translateX(-50%) rotate(180deg); font-size: 9px; line-height: 1; color: var(--faint); white-space: nowrap; }
 .empty { color: var(--quiet); font-size: 14px; padding: 18px 0; text-align: center; }
+.wide { grid-column: 1 / -1; }
+table.bands { width: 100%; border-collapse: collapse; font-size: 14px; font-variant-numeric: tabular-nums; }
+table.bands th, table.bands td { padding: 7px 6px; border-top: 1px solid var(--line); text-align: left; vertical-align: top; }
+table.bands thead th { border-top: 0; color: var(--quiet); font-weight: 500; font-size: 12.5px; padding-top: 0; }
+table.bands td small { display: block; color: var(--faint); font-size: 12px; }
+table.bands tfoot td { font-weight: 600; }
 progress { width: 100%; height: 8px; margin-top: 10px; accent-color: var(--accent); }
 </style>
 </head>
@@ -149,6 +155,7 @@ progress { width: 100%; height: 8px; margin-top: 10px; accent-color: var(--accen
       <svg class="spark" id="satsSpark" viewBox="0 0 100 30" preserveAspectRatio="none" aria-label="Satellites over the last 10 minutes"></svg>
       <div style="margin-top:8px">
         <div class="row"><span>Accuracy</span><span id="accuracy">-</span></div>
+        <div class="row"><span>Bands</span><span id="bandsRow">-</span></div>
         <div class="row"><span>Signals</span><span><a href="#sky">Sky view</a></span></div>
       </div>
     </div>
@@ -206,6 +213,18 @@ progress { width: 100%; height: 8px; margin-top: 10px; accent-color: var(--accen
         <div id="skySummary" class="hint" style="margin:0 0 12px"></div>
         <div id="bars"></div>
         <p class="hint">In dB-Hz. Above about 40 is strong. Signals are weaker near the horizon, but satellites missing from one side of the sky view mean something is blocking the antenna there. Faded bars are satellites the module is not using.</p>
+      </div>
+      <div class="card wide">
+        <h2>Bands</h2>
+        <div id="bandsSummary" style="margin:0 0 12px">Waiting for the GPS module</div>
+        <table class="bands">
+          <thead><tr><th></th><th>First band</th><th>Second band</th></tr></thead>
+          <tbody id="bandsBody"></tbody>
+          <tfoot id="bandsTotal"></tfoot>
+        </table>
+        <div class="buttons" id="bandsActions" hidden><button type="button" class="primary" id="enableBands">Turn the second band on</button></div>
+        <p class="note" id="bandsNote"></p>
+        <p class="hint">A rover gets an RTK fix quickly and reliably only when the corrections carry two bands from each satellite: L1 and L2 for GPS and GLONASS, E1 and E5b for Galileo, B1I and B2I for BeiDou. The corrections carry only what this base hears. If the second band is on but little is heard on it, the antenna is probably made for L1 only, or its cable loses the higher band.</p>
       </div>
     </div>
   </section>
@@ -335,6 +354,7 @@ const ERRORS = {
   NTRIP_BANNED: 'The backup caster says this IP is banned. It retries once an hour.',
   RTCM_OUTPUT_STALLED: 'The GPS module is not producing corrections.',
   INVALID_FIXED_POSITION: 'That position was refused. The base carries on as it was.',
+  SINGLE_BAND: 'Little or nothing is heard on the second band (L2), so rovers struggle to get an RTK fix. See Satellites, Bands.',
 };
 const SERIOUS = ['GPS_NOT_CONNECTED', 'GPS_NO_DATA', 'RTCM_OUTPUT_STALLED'];
 
@@ -474,6 +494,9 @@ function render(s) {
   show('sats', s.satellites);
   show('fix', FIX[s.fix_type] || '');
   show('accuracy', s.have_position ? meters(s.accuracy_m) : '-');
+  const b = s.bands;
+  show('bandsRow', !b || !b.l1[0] ? '-' : `${b.l1[0]} on L1, ${b.l2[0]} on L2${b.second === 'off' ? ' (L2 is off)' : ''}`);
+  $('bandsRow').className = b && s.errors.includes('SINGLE_BAND') ? 'warn' : '';
   sparkline($('satsSpark'), samples.map(h => h.sats));
 
   // Position
@@ -632,11 +655,82 @@ async function loadSky() {
   clearTimeout(skyTimer);
   if (page !== 'sky') return;
   try {
-    const response = await fetch('/api/sky', { cache: 'no-store' });
-    if (response.ok) drawSky(await response.json());
+    const [sky, signals] = await Promise.all(['/api/sky', '/api/signals'].map(path => fetch(path, { cache: 'no-store' })));
+    if (sky.ok) drawSky(await sky.json());
+    if (signals.ok) drawBands(await signals.json());
   } catch (e) { /* tried again shortly */ }
   skyTimer = setTimeout(loadSky, 5000);
 }
+
+// Each constellation's two bands, by u-blox number, in the order shown
+const BAND_NAMES = [[0, ['L1C/A', 'L2C']], [2, ['E1', 'E5b']], [3, ['B1I', 'B2I']], [6, ['L1', 'L2']], [5, ['L1C/A', 'L2C']]];
+const middle = list => list.length ? list.slice().sort((a, b) => a - b)[Math.floor(list.length / 2)] : null;
+const heardText = list => list.length ? `${list.length} heard, ${middle(list)} dB-Hz` : 'None heard';
+
+const REQUEST = {
+  working: 'Turning it on...',
+  saved: 'Turned on, and saved in the GPS module.',
+  on_until_power_off: 'Turned on, but the GPS module would not save it, so it goes back to L1 only when the module loses power.',
+  refused: 'The GPS module refused to turn it on.',
+};
+
+function drawBands(data) {
+  const settings = {};
+  for (const [g, on, first, second] of data.settings) settings[g] = { on, bands: [first, second] };
+  const heard = {};
+  for (const [g, id, band, cno] of data.signals) {
+    if (band) (heard[g] = heard[g] || [[], []])[band - 1].push(cno);
+  }
+
+  let rows = '';
+  const all = [[], []];
+  for (const [g, names] of BAND_NAMES) {
+    const setting = settings[g];
+    const lists = heard[g] || [[], []];
+    // Constellations switched off, and QZSS where it cannot be seen, are left out
+    if (!lists[0].length && !lists[1].length && (!setting || !setting.on || g === 5)) continue;
+    rows += `<tr><td>${gnss(g)[0]}</td>`;
+    for (const band of [0, 1]) {
+      const off = setting && (!setting.on || !setting.bands[band]);
+      const missing = band === 1 && !off && lists[0].length >= 3 && lists[1].length * 2 < lists[0].length;
+      rows += `<td class="${off ? 'warn' : missing ? 'bad' : ''}">${off ? 'Off' : heardText(lists[band])}<small>${names[band]}</small></td>`;
+      all[band].push(...lists[band]);
+    }
+    rows += '</tr>';
+  }
+  $('bandsBody').innerHTML = rows;
+  $('bandsTotal').innerHTML = rows ? `<tr><td>All</td><td>${heardText(all[0])}</td><td>${heardText(all[1])}</td></tr>` : '';
+
+  const [first, second] = all.map(list => list.length);
+  const summary = $('bandsSummary');
+  summary.className = '';
+  if (data.age_ms < 0) {
+    summary.textContent = 'Waiting for the GPS module';
+  } else if (data.second_band === 'off') {
+    summary.className = 'bad';
+    summary.textContent = 'The GPS module\'s second band is off, so the corrections carry L1 only. Turn it on below.';
+  } else if (data.second_band === 'partly') {
+    summary.className = 'warn';
+    summary.textContent = 'The second band is off for some constellations. Turn it on below.';
+  } else if (first >= 8 && second * 2 < first) {
+    summary.className = 'bad';
+    summary.textContent = `The second band is ${data.second_band === 'on' ? 'on' : 'expected'}, but little is heard on it: ${second} signals against ${first} on L1. The antenna is probably made for L1 only, or its cable loses the second band.`;
+  } else {
+    summary.className = 'good';
+    summary.textContent = `Both bands heard: ${first} signals on L1 and ${second} on the second band.`;
+  }
+
+  $('bandsActions').hidden = !['off', 'partly'].includes(data.second_band) || data.request === 'working';
+  if (REQUEST[data.request] && !$('bandsNote').dataset.asked) show('bandsNote', REQUEST[data.request]);
+}
+
+$('enableBands').addEventListener('click', async () => {
+  if (!confirm('Turn the second band on?\n\nThe GPS module restarts its tracking, so corrections pause for a few seconds. It keeps the setting from now on.')) return;
+  $('bandsNote').dataset.asked = '1';
+  await post('/api/bands', null, 'bandsNote');
+  delete $('bandsNote').dataset.asked;
+  setTimeout(loadSky, 2000);
+});
 
 function drawSky(data) {
   const seen = data.sats.map(([g, id, cno, el, az, used]) => ({ g, id, cno, el, az, used: !!used })).filter(s => s.cno > 0);

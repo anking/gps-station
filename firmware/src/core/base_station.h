@@ -15,7 +15,7 @@
 #include "gnss_stream.h"
 
 typedef enum {
-    BASE_MODE_SURVEY = 1,   // Same numbers as the receiver's own TMODE3 mode field
+    BASE_MODE_SURVEY = 1,   // Same numbers as the receiver's own CFG-TMODE-MODE
     BASE_MODE_FIXED = 2,
 } base_mode_kind_t;
 

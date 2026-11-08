@@ -15,7 +15,10 @@ import threading
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from f9p_sim import ID_CFG_VALSET, SECOND_BAND_KEYS, F9pSim, crc24q  # noqa: E402
+from f9p_sim import (  # noqa: E402
+    CLS_CFG, LEGACY_CFG, RTCM_RATE_KEYS, SECOND_BAND_KEYS, UART1_BAUDRATE, UART1OUTPROT_NMEA, UART1OUTPROT_RTCM3X,
+    UART1OUTPROT_UBX, F9pSim, crc24q,
+)
 
 HOST = None
 RESULTS = {}
@@ -232,7 +235,12 @@ def survey_then_upload():
         wait_for(lambda: len(caster.received) >= 400, 10, "corrections at the caster")
         check(whole_frames(caster.received), "the caster must receive whole, valid frames")
         check(sim.rate_ms == 1000, f"base should run at 1 Hz, got {sim.rate_ms} ms")
-        check(sim.port_config[14] == 0x21, "UART1 output must be UBX and RTCM only")
+        check(sim.config[UART1_BAUDRATE] == 230400, f"UART1 speed {sim.config[UART1_BAUDRATE]}")
+        check((sim.config[UART1OUTPROT_UBX], sim.config[UART1OUTPROT_NMEA], sim.config[UART1OUTPROT_RTCM3X]) == (1, 0, 1),
+              "UART1 output must be UBX and RTCM only")
+        check({t: sim.config[k] for t, k in RTCM_RATE_KEYS.items()} == {1005: 1, 1074: 1, 1084: 1, 1094: 1, 1124: 1, 1230: 10},
+              f"correction rates {[(t, sim.config[k]) for t, k in RTCM_RATE_KEYS.items()]}")
+        check(not any(c[0] == CLS_CFG and c[1] in LEGACY_CFG for c in sim.commands), "only CFG-VALSET and CFG-VALGET, no old messages")
         check(any(c[0] == 0x01 and c[1] == 0x35 for c in sim.commands), "the satellite list must be asked for")
         wait_for(lambda: base.status.get("have_position"), 5, "position")
         check(abs(base.status["lat"] - 40.1234567) < 1e-6, f"latitude {base.status}")
@@ -533,6 +541,11 @@ def anything_else_is_turned_away():
         base.stop(), sim.close(), caster.close()
 
 
+def band_layers(sim):
+    """The layers of each CFG-VALSET that changed the bands, as the rest of the set-up uses it too."""
+    return [layers for layers, changes in sim.valsets if SECOND_BAND_KEYS[0] in changes]
+
+
 def turns_the_second_band_on():
     # As found on the real base: a module set to L1 only, so the corrections carried nothing else
     caster, sim = Caster(), F9pSim(survey_seconds=1, second_band=False)
@@ -548,8 +561,8 @@ def turns_the_second_band_on():
         before = len(caster.received)
         base.send("SECOND_BAND")
         wait_for(lambda: base.signals.get("request") == "saved", 8, "the module saving it")
-        check(sim.valset_layers == [0x07], f"layers {sim.valset_layers}")
-        check(all(sim.saved_signals[key] == 1 for key in SECOND_BAND_KEYS), "kept through a power cut")
+        check(band_layers(sim) == [0x07], f"layers {band_layers(sim)}")
+        check(all(sim.saved[key] == 1 for key in SECOND_BAND_KEYS), "kept through a power cut")
         wait_for(lambda: base.signals.get("second_band") == "on", 8, "the settings read again")
         wait_for(lambda: "SINGLE_BAND" not in base.status.get("errors", []), 10, "the warning gone")
         check(base.status["bands"]["l2"][0] == 24, f"second band heard {base.status['bands']}")
@@ -568,9 +581,9 @@ def second_band_on_until_power_off_when_the_module_will_not_save_it():
         wait_for(lambda: base.signals.get("second_band") == "off", 15, "the band settings read")
         base.send("SECOND_BAND")
         wait_for(lambda: base.signals.get("request") == "on_until_power_off", 8, "the module taking it for now")
-        check(sim.valset_layers == [0x07, 0x01], f"layers {sim.valset_layers}")
-        check(all(sim.signals[key] == 1 for key in SECOND_BAND_KEYS), "on in use")
-        check(all(sim.saved_signals[key] == 0 for key in SECOND_BAND_KEYS), "not saved")
+        check(band_layers(sim) == [0x07, 0x01], f"layers {band_layers(sim)}")
+        check(all(sim.config[key] == 1 for key in SECOND_BAND_KEYS), "on in use")
+        check(all(sim.saved[key] == 0 for key in SECOND_BAND_KEYS), "not saved")
         wait_for(lambda: base.signals.get("second_band") == "on", 8, "the settings read again")
     finally:
         base.stop(), sim.close(), caster.close()
@@ -583,7 +596,7 @@ def an_antenna_for_l1_only_still_warns():
     try:
         wait_for(lambda: base.signals.get("second_band") == "on", 15, "the band settings read")
         wait_for(lambda: "SINGLE_BAND" in base.status.get("errors", []), 30, "the single band warning")
-        check(not any(c[1] == ID_CFG_VALSET for c in sim.commands), "nothing changed on the module by itself")
+        check(not band_layers(sim), "the bands are not changed on the module by itself")
     finally:
         base.stop(), sim.close(), caster.close()
 

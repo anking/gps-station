@@ -1,4 +1,4 @@
-// A surveyed base position in the units UBX-CFG-TMODE3 expects.
+// A surveyed base position in the units the module's CFG-TMODE settings expect.
 #pragma once
 
 #include <stdbool.h>

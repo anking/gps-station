@@ -45,12 +45,23 @@ If it cannot join your network for 2 minutes, the setup network comes back as we
 
 ## Using it
 
-The page shows what it is doing, and in plain words what is wrong if anything is. All settings, and the base mode, survive a restart.
+The page shows what it is doing, and in plain words what is wrong if anything is. All settings, and the base mode, survive a restart. It has these tabs:
+
+- **Overview:** whether corrections are going out, to whom, the satellites in use, the base's position, a survey's progress, and the WiFi signal.
+- **Map:** the base on satellite or street imagery. The map library is stored on the board, so only the imagery comes from the internet, through your phone or computer. On the setup network there is none.
+- **Satellites:** where each satellite is in the sky and how strong its signal is. Satellites missing from one side of the sky mean something blocks the antenna there.
+- **Position:** survey or fixed. For a fixed position:
+  - a map to put the base on: tap where the antenna is, or drag the red pin. The blue dot is where the module says it is, and the page says how far apart the two are;
+  - **Use the current position** copies where the module is now, to the full precision it reports, and **Use the current height** copies just its height;
+  - the height can be given above sea level instead, and is turned into the height above the ellipsoid the module needs.
+- **Settings** and **Maintenance:** WiFi, the backup caster, monitoring, updates, installing a firmware file and restarting.
 
 **Survey or fixed position:** corrections make a rover precise *relative to the base*, so the rover's position is only as right and as repeatable as the base's.
 
 - **Survey** works out the position by averaging. It is quick to set up, but the default of 60 seconds and 3 m leaves the base up to metres off, and the result changes with every survey. Anything saved in rover coordinates, such as a mowing boundary, moves with it.
-- **Fixed** uses a position you give it. Use this for anything that must line up from day to day. Get the position from a long survey, or from a day of raw data sent to a free service such as [OPUS](https://geodesy.noaa.gov/OPUS/) or [CSRS-PPP](https://webapp.csrs-scrs.nrcan-rncan.gc.ca/geod/tools-outils/ppp.php). Heights are above the ellipsoid, not sea level. The antenna must not move afterwards.
+- **Fixed** uses a position you give it. Use this for anything that must line up from day to day. Get the position from a long survey, or from a day of raw data sent to a free service such as [OPUS](https://geodesy.noaa.gov/OPUS/) or [CSRS-PPP](https://webapp.csrs-scrs.nrcan-rncan.gc.ca/geod/tools-outils/ppp.php), or pick it on the map. The antenna must not move afterwards.
+  - **On the map:** a point picked there is only as right as the imagery, often a metre or so out. The rovers' positions are then out by the same, but the same every day, which is what matters for anything saved in rover coordinates. Many metres from where the module says it is can make RTK fixed harder for rovers to reach, and the page warns from 5 m.
+  - **Heights** are above the ellipsoid, the smooth shape GPS measures from, not above sea level. The two differ by tens of metres depending on where you are: the module's own figure for here is on the page. A survey's height, shown as Height (ellipsoid) on the Overview, is already the right kind. A height from a map or a sign is above sea level: enter it in the sea level box. A height a few metres out moves the rovers' heights, not where they are on the ground.
 
 **On an ESP32-C3 Super Mini:** many of these boards are reported to lose WiFi at full power, so this build caps it at 8.5 dBm. That shortens its range, so check the signal on the page with the board where it will finally sit. If it needs more and this board copes, raise `WIFI_MAX_TX_POWER` in [platformio.ini](./platformio.ini).
 

@@ -17,6 +17,10 @@
 
 extern const char index_html_start[] asm("_binary_index_html_start");
 extern const char index_html_end[] asm("_binary_index_html_end");
+extern const char leaflet_js_start[] asm("_binary_leaflet_js_gz_start");
+extern const char leaflet_js_end[] asm("_binary_leaflet_js_gz_end");
+extern const char leaflet_css_start[] asm("_binary_leaflet_css_gz_start");
+extern const char leaflet_css_end[] asm("_binary_leaflet_css_gz_end");
 
 #define MAX_FORM_LENGTH 1100
 #define MIN_UI_PASSWORD_LENGTH 8
@@ -140,7 +144,45 @@ static esp_err_t get_index(httpd_req_t *req)
     if (!authorized(req)) return ESP_OK;
 
     httpd_resp_set_type(req, "text/html");
+    httpd_resp_set_hdr(req, "Cache-Control", "no-cache");
     return httpd_resp_send(req, index_html_start, index_html_end - index_html_start - 1);
+}
+
+// The map library, stored compressed and sent straight from flash, so it costs no RAM. Its name carries its version,
+// so a browser can keep it.
+static esp_err_t send_stored(httpd_req_t *req, const char *type, const char *start, const char *end)
+{
+    if (!authorized(req)) return ESP_OK;
+
+    httpd_resp_set_type(req, type);
+    httpd_resp_set_hdr(req, "Content-Encoding", "gzip");
+    httpd_resp_set_hdr(req, "Cache-Control", "max-age=31536000, immutable");
+    return httpd_resp_send(req, start, end - start);
+}
+
+static esp_err_t get_leaflet_js(httpd_req_t *req)
+{
+    return send_stored(req, "application/javascript", leaflet_js_start, leaflet_js_end);
+}
+
+static esp_err_t get_leaflet_css(httpd_req_t *req)
+{
+    return send_stored(req, "text/css", leaflet_css_start, leaflet_css_end);
+}
+
+static esp_err_t get_sky(httpd_req_t *req)
+{
+    if (!authorized(req)) return ESP_OK;
+
+    static char json[1700];
+    xSemaphoreTake(lock, portMAX_DELAY);
+    int length = base_sky_json(base, json, sizeof(json));
+    xSemaphoreGive(lock);
+
+    if (length <= 0 || length >= (int)sizeof(json)) return httpd_resp_send_500(req);
+
+    httpd_resp_set_type(req, "application/json");
+    return httpd_resp_send(req, json, length);
 }
 
 static esp_err_t get_status(httpd_req_t *req)
@@ -353,7 +395,7 @@ void web_start(base_station_t *base_station, SemaphoreHandle_t base_lock, const 
 
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
     config.stack_size = 8192;
-    config.max_uri_handlers = 9;
+    config.max_uri_handlers = 12;
     config.lru_purge_enable = true;
 
     httpd_handle_t server = NULL;
@@ -362,6 +404,9 @@ void web_start(base_station_t *base_station, SemaphoreHandle_t base_lock, const 
     const httpd_uri_t routes[] = {
         { .uri = "/", .method = HTTP_GET, .handler = get_index },
         { .uri = "/api/status", .method = HTTP_GET, .handler = get_status },
+        { .uri = "/api/sky", .method = HTTP_GET, .handler = get_sky },
+        { .uri = "/leaflet-1.9.4.js", .method = HTTP_GET, .handler = get_leaflet_js },
+        { .uri = "/leaflet-1.9.4.css", .method = HTTP_GET, .handler = get_leaflet_css },
         { .uri = "/api/settings", .method = HTTP_GET, .handler = get_settings },
         { .uri = "/api/mode", .method = HTTP_POST, .handler = post_mode },
         { .uri = "/api/settings", .method = HTTP_POST, .handler = post_settings },

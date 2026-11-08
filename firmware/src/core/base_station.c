@@ -24,6 +24,7 @@ enum { ACK_IDLE, ACK_WAITING, ACK_DONE, ACK_REFUSED };
 #define STATUS_POLL_MS 1000u
 #define GPS_SILENCE_MS 5000u
 #define RTCM_STALL_MS 5000u
+#define SKY_POLL_EVERY 5   // Status polls, so about every 5 seconds: it is long, and only for people looking at the page
 
 // Public casters count failed connections per IP and ban the address
 #define BACKOFF_FIRST_MS 15000u
@@ -129,12 +130,32 @@ static void on_ubx(void *ctx, uint8_t cls, uint8_t id, const uint8_t *payload, u
         base->longitude_e7 = (int32_t)u32_le(payload + 8);
         base->latitude_e7 = (int32_t)u32_le(payload + 12);
         base->height_mm = (int32_t)u32_le(payload + 16);
+        base->height_msl_mm = (int32_t)u32_le(payload + 20);
+        base->longitude_hp = (int8_t)payload[24];
+        base->latitude_hp = (int8_t)payload[25];
+        base->height_hp = (int8_t)payload[26];
+        base->height_msl_hp = (int8_t)payload[27];
         base->horizontal_accuracy_tenth_mm = u32_le(payload + 28);
         base->have_position = true;
     } else if (id == UBX_NAV_SVIN && length == 40) {
         base->survey_elapsed_s = u32_le(payload + 8);
         base->survey_mean_accuracy_tenth_mm = u32_le(payload + 28);
         base->survey_valid = payload[36] != 0;
+    } else if (id == UBX_NAV_SAT && length >= 8 && length >= 8u + 12u * payload[5]) {
+        uint8_t count = payload[5];
+        base->sky_count = 0;
+        for (uint8_t i = 0; i < count && base->sky_count < BASE_MAX_SATELLITES; i++) {
+            const uint8_t *entry = payload + 8 + 12 * i;
+            base_satellite_t *satellite = &base->sky[base->sky_count++];
+            satellite->gnss = entry[0];
+            satellite->id = entry[1];
+            satellite->cno = entry[2];
+            satellite->elevation = (int8_t)entry[3];
+            satellite->azimuth = (int16_t)(entry[4] | (entry[5] << 8));
+            satellite->used = (u32_le(entry + 8) & 0x08u) != 0;
+        }
+        base->have_sky = true;
+        base->sky_at_ms = base->now_ms;
     }
 }
 
@@ -286,6 +307,7 @@ static void poll_status(base_station_t *base)
     if (base->phase == PHASE_SURVEY) poll_nav(base, UBX_NAV_SVIN);
     poll_nav(base, UBX_NAV_HPPOSLLH);
     poll_nav(base, UBX_NAV_PVT);
+    if (base->status_polls++ % SKY_POLL_EVERY == 0) poll_nav(base, UBX_NAV_SAT);
 }
 
 // ------------------------------------------------------------------------------------------------
@@ -534,6 +556,16 @@ static void json_safe(char *out, size_t capacity, const char *text)
     out[used] = '\0';
 }
 
+// An exact decimal of value / 10^decimals, with no floating point to lose digits of a surveyed position.
+static void exact_decimal(char *out, size_t capacity, int64_t value, int decimals)
+{
+    uint64_t scale = 1;
+    for (int i = 0; i < decimals; i++) scale *= 10;
+    uint64_t magnitude = value < 0 ? (uint64_t)(-(value + 1)) + 1u : (uint64_t)value;
+    snprintf(out, capacity, "%s%llu.%0*llu", value < 0 ? "-" : "",
+             (unsigned long long)(magnitude / scale), decimals, (unsigned long long)(magnitude % scale));
+}
+
 int base_status_json(const base_station_t *base, char *out, size_t capacity)
 {
     static const struct { uint32_t flag; const char *name; } ERROR_NAMES[] = {
@@ -561,9 +593,16 @@ int base_status_json(const base_station_t *base, char *out, size_t capacity)
     char fixed_text[sizeof(base->mode.fixed_text)];
     json_safe(fixed_text, sizeof(fixed_text), base->mode.fixed_text);
 
+    // Room for the largest 64-bit value, which the compiler checks for, though a position never comes close
+    char lat[48], lon[48], height[48], height_msl[48];
+    exact_decimal(lat, sizeof(lat), (int64_t)base->latitude_e7 * 100 + base->latitude_hp, 9);
+    exact_decimal(lon, sizeof(lon), (int64_t)base->longitude_e7 * 100 + base->longitude_hp, 9);
+    exact_decimal(height, sizeof(height), (int64_t)base->height_mm * 10 + base->height_hp, 4);
+    exact_decimal(height_msl, sizeof(height_msl), (int64_t)base->height_msl_mm * 10 + base->height_msl_hp, 4);
+
     return snprintf(out, capacity,
         "{\"phase\":\"%s\",\"mode\":\"%s\",\"survey_setting_m\":%.3f,\"survey_setting_s\":%u,\"fixed_position\":\"%s\","
-        "\"have_position\":%s,\"lat\":%.7f,\"lon\":%.7f,\"height_m\":%.3f,\"accuracy_m\":%.4f,\"satellites\":%u,\"fix_type\":%u,"
+        "\"have_position\":%s,\"lat\":%s,\"lon\":%s,\"height_m\":%s,\"height_msl_m\":%s,\"accuracy_m\":%.4f,\"satellites\":%u,\"fix_type\":%u,"
         "\"survey_elapsed_s\":%u,\"survey_accuracy_m\":%.4f,\"survey_valid\":%s,"
         "\"direct_port\":%u,\"direct_rovers\":%d,"
         "\"caster_connected\":%s,\"caster_message\":\"%s\",\"sent_age_ms\":%d,\"frames_sent\":%u,\"bytes_sent\":%u,"
@@ -572,7 +611,7 @@ int base_status_json(const base_station_t *base, char *out, size_t capacity)
         base->mode.kind == BASE_MODE_FIXED ? "fixed" : "survey",
         base->mode.survey_accuracy_mm / 1000.0, (unsigned)base->mode.survey_seconds, fixed_text,
         base->have_position ? "true" : "false",
-        base->latitude_e7 / 1e7, base->longitude_e7 / 1e7, base->height_mm / 1000.0,
+        lat, lon, height, height_msl,
         base->horizontal_accuracy_tenth_mm / 10000.0, base->satellites, base->fix_type,
         (unsigned)base->survey_elapsed_s, base->survey_mean_accuracy_tenth_mm / 10000.0, base->survey_valid ? "true" : "false",
         (unsigned)base->direct.port, direct_server_rover_count(&base->direct),
@@ -580,4 +619,19 @@ int base_status_json(const base_station_t *base, char *out, size_t capacity)
         base->sent_any ? (int)(base->now_ms - base->last_sent_ms) : -1,
         (unsigned)base->frames_sent, (unsigned)base->bytes_sent,
         (unsigned)base->stream.rtcm_errors, errors);
+}
+
+int base_sky_json(const base_station_t *base, char *out, size_t capacity)
+{
+    int used = snprintf(out, capacity, "{\"age_ms\":%d,\"sats\":[",
+                        base->have_sky ? (int)(base->now_ms - base->sky_at_ms) : -1);
+
+    for (uint8_t i = 0; i < base->sky_count && used >= 0 && (size_t)used < capacity; i++) {
+        const base_satellite_t *s = &base->sky[i];
+        used += snprintf(out + used, capacity - (size_t)used, "%s[%u,%u,%u,%d,%d,%d]", i ? "," : "",
+                         s->gnss, s->id, s->cno, s->elevation, s->azimuth, s->used ? 1 : 0);
+    }
+
+    if (used >= 0 && (size_t)used < capacity) used += snprintf(out + used, capacity - (size_t)used, "]}");
+    return used;
 }

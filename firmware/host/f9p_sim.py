@@ -18,7 +18,7 @@ import tty
 SYNC = b"\xb5\x62"
 CLS_NAV, CLS_ACK, CLS_CFG = 0x01, 0x05, 0x06
 ID_CFG_PRT, ID_CFG_MSG, ID_CFG_RATE, ID_CFG_TMODE3 = 0x00, 0x01, 0x08, 0x71
-ID_NAV_PVT, ID_NAV_HPPOSLLH, ID_NAV_SVIN = 0x07, 0x14, 0x3B
+ID_NAV_PVT, ID_NAV_HPPOSLLH, ID_NAV_SVIN, ID_NAV_SAT = 0x07, 0x14, 0x3B, 0x35
 RTCM_MSG_CLASS = 0xF5
 RTCM_TYPES = {0x05: 1005, 0x4A: 1074, 0x54: 1084, 0x5E: 1094, 0x7C: 1124}
 
@@ -151,7 +151,8 @@ class F9pSim:
         if cls == CLS_CFG:
             self._handle_cfg(msg_id, payload)
         elif cls == CLS_NAV:
-            handler = {ID_NAV_PVT: self._nav_pvt, ID_NAV_HPPOSLLH: self._nav_hpposllh, ID_NAV_SVIN: self._nav_svin}.get(msg_id)
+            handler = {ID_NAV_PVT: self._nav_pvt, ID_NAV_HPPOSLLH: self._nav_hpposllh, ID_NAV_SVIN: self._nav_svin,
+                       ID_NAV_SAT: self._nav_sat}.get(msg_id)
             if handler:
                 self._write(ubx_frame(CLS_NAV, msg_id, handler()))
 
@@ -194,6 +195,17 @@ class F9pSim:
         struct.pack_into("<ii", message, 8, int(self.longitude * 1e7), int(self.latitude * 1e7))
         struct.pack_into("<ii", message, 16, int(self.height_m * 1000), int((self.height_m - 34) * 1000))
         struct.pack_into("<I", message, 28, 14000)  # 1.4 m in 0.1 mm
+        return bytes(message)
+
+    def _nav_sat(self):
+        """32 satellites over four constellations: more than the old 256-byte limit on a message."""
+        count = 32
+        message = bytearray(8 + 12 * count)
+        message[4], message[5] = 1, count
+        for i in range(count):
+            gnss = (0, 2, 3, 6)[i % 4]
+            struct.pack_into("<BBBbhhI", message, 8 + 12 * i, gnss, i + 1, 30 + i % 20, 10 + (i * 7) % 80, (i * 37) % 360, 0,
+                             0x08 if i % 3 else 0)
         return bytes(message)
 
     def _survey_elapsed(self):

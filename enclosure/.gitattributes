@@ -1,0 +1,2 @@
+# Preserve imported CAD sources byte-for-byte and avoid generated text diffs.
+**/inputs/*.step binary

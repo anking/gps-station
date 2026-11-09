@@ -97,3 +97,12 @@ firmware/host/base_host
 firmware/host/core_tests
 firmware/.vscode/
 __pycache__/
+.cad-venv/
+.cad-tmp/
+
+# Enclosure exports are regenerated from the scripts, parameters and inputs.
+# Keep original STEP files in enclosure/**/inputs/ under version control.
+/enclosure/**/output/
+/enclosure/**/*.zip
+# Tessellated copies of the original CAD parts used for concept previews.
+/enclosure/concepts/**/*.stl

@@ -1,0 +1,21 @@
+{
+  "body_width": 90.0,
+  "body_height": 110.0,
+  "body_depth": 37.0,
+  "lid_thickness": 3.0,
+  "wall": 6.0,
+  "back_thickness": 3.0,
+  "corner_radius": 6.0,
+  "gland_hole_diameter": 16.2,
+  "gland_centres_x": [-17.0, 17.0],
+  "gland_centre_depth": 20.0,
+  "gasket_cord_diameter": 2.0,
+  "gasket_groove_width": 2.4,
+  "gasket_groove_depth": 1.4,
+  "gnss_width": 44.0,
+  "gnss_length": 43.2,
+  "esp_width": 18.0,
+  "esp_length": 24.7,
+  "assumed_pcb_thickness": 1.6,
+  "notes": "Prototype. The 44 mm port-bearing edge becomes horizontal when the SMA points down; 43.2 mm is connector-edge to opposite connector-edge. Hole centres and hardware envelopes are not measured. GNSS corner pads intentionally undrilled."
+}

@@ -4,6 +4,8 @@ A **u-blox ZED-F9P RTK GPS receiver** broadcasting **RTCM correction data** to a
 
 **The base station now runs on an ESP32. See [firmware/](./firmware).** It needs no Raspberry Pi, .NET or Node.js, and does everything the Pi did except drive a screen on the device itself.
 
+Mechanical designs: [base-station enclosure](enclosure/README.md) and [robot mower housing and tripod](mower/README.md).
+
 The rest of this page describes the original Raspberry Pi application. It stays only until the firmware has passed its [first bench test](./firmware/readme.md#first-bench-test) on real hardware, and should then be removed along with its dependency on the [zedf9p-server](https://github.com/anking/zedf9p-server) driver.
 
 # Raspberry Pi application

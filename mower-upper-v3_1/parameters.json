@@ -1,0 +1,29 @@
+{
+  "version": "V3.1 full-face correction",
+  "material": "PETG",
+  "printer": "Bambu Lab H2S",
+  "printer_volume": [
+    340,
+    320,
+    340
+  ],
+  "brim_allowance_per_side": 5,
+  "mount_plane_z": 177.8,
+  "eye_pitch": 108,
+  "eye_window": 33.2,
+  "eye_pocket_provisional": 39.5,
+  "hood_clip_beam_inner_x": 140.8,
+  "hood_clip_beam_thickness": 1.8,
+  "hood_clip_nose_x": 145.4,
+  "hood_catch_inner_x": 144.1,
+  "hood_clip_width": 14,
+  "hood_guide_clearance_per_side": 0.3,
+  "face_clip_inner_x": 94.4,
+  "face_clip_thickness": 1.6,
+  "face_clip_nose_x": 98.8,
+  "face_catch_inner_x": 97.5,
+  "cover_retaining_screws": "M3x12 button head, 2 hood + 2 face",
+  "antenna_axis_y": 218.775,
+  "front_panel_perimeter_inset_mm": 0.3,
+  "front_panel_axial_gap_mm": 0.3
+}

@@ -1,0 +1,19 @@
+item,quantity,connection,note
+M5x45 bolt,6,frame clamps,washer under head; captive ordinary M5 nut in lower clamp
+M5x30 bolt,4,side arm keyed splices,washer under head; ordinary M5 nut in hex pocket
+M5x30 button head bolt,3,tray to legs,fit from inside with washer; side-load ordinary M5 nut before assembly
+M5 ordinary hex nut AF8,13,all M5 joints,4mm nut height; model pocket AF8.4; do not substitute tall nyloc nuts in shallow pockets
+M5 flat washer OD10,13,all M5 bolt heads,check actual head/washer stack before loading
+5mm metal quick release pin grip40,3,lower keyed sockets,positive retained type; verify head and safety retainer clearance; bore5.5
+M4x16 button head bolt,8,2 floor bridges,washer under head; M4 captive nut in bridge underside
+M4 ordinary hex nut AF7,8,floor bridges,pocket AF7.4 depth3.4
+M4 flat washer OD9,8,floor bridges,verify actual screw engagement
+M3x10 button head bolt,4,lid bridges,washer under head; M3 captive nut underneath
+M3x12 button head bolt,4,blank lidar and GPS plates,2 per plate; washer and ordinary nut under lid
+M3x16 button head bolt,2,camera plate to front wall,4mm rear spacer is integral to camera plate
+M3x16 button head bolt,8,electronics carriers,4 per panel; M3 nut recessed in floor
+M3 ordinary hex nut AF5.5,18,M3 connections,pocket AF5.8 where captive; standard height about2.4
+M3 flat washer OD7,18,M3 connections,check actual screw engagement
+M2.5x14 bolt,4,example Raspberry Pi mounting,provisional for1.6mm PCB plus5mm spacer and3mm carrier; fit actual board
+M2.5 ordinary hex nut,4,example Raspberry Pi mounting,under carrier slot
+M2.5 washer OD7 minimum,8,example Raspberry Pi mounting,washer must span5.2mm carrier slot; insulate PCB as required

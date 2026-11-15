@@ -1,0 +1,680 @@
+{
+  "parameters": {
+    "version": "V3.1 full-face correction",
+    "material": "PETG",
+    "printer": "Bambu Lab H2S",
+    "printer_volume": [
+      340,
+      320,
+      340
+    ],
+    "brim_allowance_per_side": 5,
+    "mount_plane_z": 177.8,
+    "eye_pitch": 108,
+    "eye_window": 33.2,
+    "eye_pocket_provisional": 39.5,
+    "hood_clip_beam_inner_x": 140.8,
+    "hood_clip_beam_thickness": 1.8,
+    "hood_clip_nose_x": 145.4,
+    "hood_catch_inner_x": 144.1,
+    "hood_clip_width": 14,
+    "hood_guide_clearance_per_side": 0.3,
+    "face_clip_inner_x": 94.4,
+    "face_clip_thickness": 1.6,
+    "face_clip_nose_x": 98.8,
+    "face_catch_inner_x": 97.5,
+    "cover_retaining_screws": "M3x12 button head, 2 hood + 2 face",
+    "antenna_axis_y": 218.775,
+    "front_panel_perimeter_inset_mm": 0.3,
+    "front_panel_axial_gap_mm": 0.3
+  },
+  "parts": {
+    "base_one_piece": {
+      "quantity": 1,
+      "test": false,
+      "bbox_mm": [
+        304.8772646827433,
+        276.82894157452984,
+        16.580005260823313
+      ],
+      "volume_cm3": 401.88873116128985,
+      "note": "Flat electronics floor; compact perimeter guides; original leg interfaces"
+    },
+    "hood_one_piece": {
+      "quantity": 1,
+      "test": false,
+      "bbox_mm": [
+        306.53233777551503,
+        277.5166250000094,
+        87.65500001914404
+      ],
+      "volume_cm3": 356.88068594589294,
+      "note": "Continuous exterior loft; compact perimeter guides; original clips and fasteners"
+    },
+    "face_one_piece": {
+      "quantity": 1,
+      "test": false,
+      "bbox_mm": [
+        241.9816872014946,
+        81.5446576706484,
+        32.51338200506212
+      ],
+      "volume_cm3": 68.02837820400951,
+      "note": "Full case-section silhouette; 0.3 mm perimeter inset and axial seam; front down"
+    },
+    "antenna_tail_beam": {
+      "quantity": 2,
+      "test": false,
+      "bbox_mm": [
+        64.00069954054065,
+        160.77500020004865,
+        24.00000020008494
+      ],
+      "volume_cm3": 89.19406622965062,
+      "note": "Reused unchanged from V2; see print quantity"
+    },
+    "harxon_mount_plate": {
+      "quantity": 1,
+      "test": false,
+      "bbox_mm": [
+        80.02486563993472,
+        80.00000020000002,
+        12.024865639934713
+      ],
+      "volume_cm3": 56.98927613427796,
+      "note": "Reused unchanged from V2; see print quantity"
+    },
+    "eye_rear_retainer": {
+      "quantity": 2,
+      "test": false,
+      "bbox_mm": [
+        56.00000020000657,
+        45.72742137768924,
+        3.0151679438937418
+      ],
+      "volume_cm3": 2.507889630204828,
+      "note": "Reused unchanged from V2; see print quantity"
+    },
+    "camera_cartridge": {
+      "quantity": 1,
+      "test": false,
+      "bbox_mm": [
+        46.00481910086074,
+        42.00481910086074,
+        8.503342104427949
+      ],
+      "volume_cm3": 5.755255809450093,
+      "note": "Reused unchanged from V2; see print quantity"
+    },
+    "TEST_hood_clip": {
+      "quantity": 0,
+      "test": true,
+      "bbox_mm": [
+        12.41295723783999,
+        24.553093119355196,
+        34.27654665967774
+      ],
+      "volume_cm3": 2.934594776970222,
+      "note": "Clip side of actual hood; roof-down orientation; use with TEST_hood_catch"
+    },
+    "TEST_hood_catch": {
+      "quantity": 0,
+      "test": true,
+      "bbox_mm": [
+        15.291230209583814,
+        25.269946054611072,
+        16.26994605461107
+      ],
+      "volume_cm3": 2.4098975649381833,
+      "note": "Actual base-side keeper and release window"
+    },
+    "TEST_face_clip": {
+      "quantity": 0,
+      "test": true,
+      "bbox_mm": [
+        12.000000200000036,
+        14.000000200000065,
+        32.30000020000003
+      ],
+      "volume_cm3": 1.2448000000000234,
+      "note": "Actual lower face clip; front down; use with TEST_face_catch"
+    },
+    "TEST_face_catch": {
+      "quantity": 0,
+      "test": true,
+      "bbox_mm": [
+        14.500000200000004,
+        3.000000200000004,
+        16.000000200000002
+      ],
+      "volume_cm3": 0.696,
+      "note": "Actual face keeper contact; detached sample for fit trials"
+    },
+    "TEST_hood_nut_seat": {
+      "quantity": 0,
+      "test": true,
+      "bbox_mm": [
+        12.005359064865358,
+        6.105359064862977,
+        12.205359064865346
+      ],
+      "volume_cm3": 0.7260315519142949,
+      "note": "M3 nut pocket for front hood-retaining screw"
+    }
+  },
+  "instances": {
+    "base_one_piece": {
+      "part": "base_one_piece",
+      "file": "_view_base_one_piece.stl",
+      "color": [
+        0.19,
+        0.23,
+        0.28
+      ]
+    },
+    "hood_one_piece": {
+      "part": "hood_one_piece",
+      "file": "_view_hood_one_piece.stl",
+      "color": [
+        0.7,
+        0.77,
+        0.8
+      ]
+    },
+    "face_one_piece": {
+      "part": "face_one_piece",
+      "file": "_view_face_one_piece.stl",
+      "color": [
+        0.045,
+        0.065,
+        0.08
+      ]
+    },
+    "eye_retainer_-54": {
+      "part": "eye_rear_retainer",
+      "file": "_view_eye_retainer_-54.stl",
+      "color": [
+        0.045,
+        0.065,
+        0.08
+      ]
+    },
+    "eye_retainer_54": {
+      "part": "eye_rear_retainer",
+      "file": "_view_eye_retainer_54.stl",
+      "color": [
+        0.045,
+        0.065,
+        0.08
+      ]
+    },
+    "camera_cartridge": {
+      "part": "camera_cartridge",
+      "file": "_view_camera_cartridge.stl",
+      "color": [
+        0.045,
+        0.065,
+        0.08
+      ]
+    },
+    "antenna_tail_-30": {
+      "part": "antenna_tail_beam",
+      "file": "_view_antenna_tail_-30.stl",
+      "color": [
+        0.19,
+        0.23,
+        0.28
+      ]
+    },
+    "antenna_tail_30": {
+      "part": "antenna_tail_beam",
+      "file": "_view_antenna_tail_30.stl",
+      "color": [
+        0.19,
+        0.23,
+        0.28
+      ]
+    },
+    "harxon_mount_plate": {
+      "part": "harxon_mount_plate",
+      "file": "_view_harxon_mount_plate.stl",
+      "color": [
+        0.19,
+        0.23,
+        0.28
+      ]
+    }
+  },
+  "context": {
+    "A_clamp_upper": {
+      "file": "_context_A_clamp_upper.stl",
+      "color": [
+        1,
+        0.36,
+        0.055
+      ],
+      "opacity": 1
+    },
+    "A_clamp_lower": {
+      "file": "_context_A_clamp_lower.stl",
+      "color": [
+        1,
+        0.36,
+        0.055
+      ],
+      "opacity": 1
+    },
+    "A_side_arm_lower": {
+      "file": "_context_A_side_arm_lower.stl",
+      "color": [
+        1,
+        0.36,
+        0.055
+      ],
+      "opacity": 1
+    },
+    "A_side_arm_upper": {
+      "file": "_context_A_side_arm_upper.stl",
+      "color": [
+        1,
+        0.36,
+        0.055
+      ],
+      "opacity": 1
+    },
+    "B_clamp_upper": {
+      "file": "_context_B_clamp_upper.stl",
+      "color": [
+        1,
+        0.36,
+        0.055
+      ],
+      "opacity": 1
+    },
+    "B_clamp_lower": {
+      "file": "_context_B_clamp_lower.stl",
+      "color": [
+        1,
+        0.36,
+        0.055
+      ],
+      "opacity": 1
+    },
+    "B_side_arm_lower": {
+      "file": "_context_B_side_arm_lower.stl",
+      "color": [
+        1,
+        0.36,
+        0.055
+      ],
+      "opacity": 1
+    },
+    "B_side_arm_upper": {
+      "file": "_context_B_side_arm_upper.stl",
+      "color": [
+        1,
+        0.36,
+        0.055
+      ],
+      "opacity": 1
+    },
+    "C_clamp_upper": {
+      "file": "_context_C_clamp_upper.stl",
+      "color": [
+        1,
+        0.36,
+        0.055
+      ],
+      "opacity": 1
+    },
+    "C_clamp_lower": {
+      "file": "_context_C_clamp_lower.stl",
+      "color": [
+        1,
+        0.36,
+        0.055
+      ],
+      "opacity": 1
+    },
+    "C_front_dogleg": {
+      "file": "_context_C_front_dogleg.stl",
+      "color": [
+        1,
+        0.36,
+        0.055
+      ],
+      "opacity": 1
+    }
+  },
+  "references": {
+    "tube_side_-304.5": {
+      "file": "_references_tube_side_-304.5.stl",
+      "color": [
+        0.18,
+        0.22,
+        0.25
+      ],
+      "opacity": 1
+    },
+    "tube_side_304.5": {
+      "file": "_references_tube_side_304.5.stl",
+      "color": [
+        0.18,
+        0.22,
+        0.25
+      ],
+      "opacity": 1
+    },
+    "tube_end_-218.775": {
+      "file": "_references_tube_end_-218.775.stl",
+      "color": [
+        0.18,
+        0.22,
+        0.25
+      ],
+      "opacity": 1
+    },
+    "tube_end_218.775": {
+      "file": "_references_tube_end_218.775.stl",
+      "color": [
+        0.18,
+        0.22,
+        0.25
+      ],
+      "opacity": 1
+    },
+    "engine_APPROX_UNMEASURED": {
+      "file": "_references_engine_APPROX_UNMEASURED.stl",
+      "color": [
+        0.7,
+        0.25,
+        0.19
+      ],
+      "opacity": 0.18
+    },
+    "battery_ZONE_UNMEASURED": {
+      "file": "_references_battery_ZONE_UNMEASURED.stl",
+      "color": [
+        0.7,
+        0.25,
+        0.19
+      ],
+      "opacity": 0.18
+    },
+    "Harxon_GPS1000_REFERENCE": {
+      "file": "_references_Harxon_GPS1000_REFERENCE.stl",
+      "color": [
+        0.91,
+        0.93,
+        0.94
+      ],
+      "opacity": 1
+    },
+    "TNC_cable_clearance_REFERENCE": {
+      "file": "_references_TNC_cable_clearance_REFERENCE.stl",
+      "color": [
+        0.45,
+        0.48,
+        0.51
+      ],
+      "opacity": 0.7
+    },
+    "rear_axle_REFERENCE": {
+      "file": "_references_rear_axle_REFERENCE.stl",
+      "color": [
+        0.1,
+        0.6,
+        0.75
+      ],
+      "opacity": 0.65
+    },
+    "rear_wheel_-340_REFERENCE": {
+      "file": "_references_rear_wheel_-340_REFERENCE.stl",
+      "color": [
+        0.13,
+        0.16,
+        0.19
+      ],
+      "opacity": 0.45
+    },
+    "rear_wheel_340_REFERENCE": {
+      "file": "_references_rear_wheel_340_REFERENCE.stl",
+      "color": [
+        0.13,
+        0.16,
+        0.19
+      ],
+      "opacity": 0.45
+    },
+    "LCD_glass_-54_REFERENCE": {
+      "file": "_references_LCD_glass_-54_REFERENCE.stl",
+      "color": [
+        0.015,
+        0.025,
+        0.03
+      ],
+      "opacity": 1
+    },
+    "LCD_iris_-54_REFERENCE": {
+      "file": "_references_LCD_iris_-54_REFERENCE.stl",
+      "color": [
+        0.04,
+        0.78,
+        0.93
+      ],
+      "opacity": 1
+    },
+    "LCD_pupil_-54_REFERENCE": {
+      "file": "_references_LCD_pupil_-54_REFERENCE.stl",
+      "color": [
+        0.015,
+        0.025,
+        0.03
+      ],
+      "opacity": 1
+    },
+    "LCD_glint_-54_REFERENCE": {
+      "file": "_references_LCD_glint_-54_REFERENCE.stl",
+      "color": [
+        0.91,
+        0.93,
+        0.94
+      ],
+      "opacity": 1
+    },
+    "LCD_glass_54_REFERENCE": {
+      "file": "_references_LCD_glass_54_REFERENCE.stl",
+      "color": [
+        0.015,
+        0.025,
+        0.03
+      ],
+      "opacity": 1
+    },
+    "LCD_iris_54_REFERENCE": {
+      "file": "_references_LCD_iris_54_REFERENCE.stl",
+      "color": [
+        0.04,
+        0.78,
+        0.93
+      ],
+      "opacity": 1
+    },
+    "LCD_pupil_54_REFERENCE": {
+      "file": "_references_LCD_pupil_54_REFERENCE.stl",
+      "color": [
+        0.015,
+        0.025,
+        0.03
+      ],
+      "opacity": 1
+    },
+    "LCD_glint_54_REFERENCE": {
+      "file": "_references_LCD_glint_54_REFERENCE.stl",
+      "color": [
+        0.91,
+        0.93,
+        0.94
+      ],
+      "opacity": 1
+    },
+    "AI_camera_lens_REFERENCE": {
+      "file": "_references_AI_camera_lens_REFERENCE.stl",
+      "color": [
+        0.015,
+        0.025,
+        0.03
+      ],
+      "opacity": 1
+    },
+    "AI_camera_PCB_REFERENCE": {
+      "file": "_references_AI_camera_PCB_REFERENCE.stl",
+      "color": [
+        0.12,
+        0.4,
+        0.26
+      ],
+      "opacity": 1
+    },
+    "AI_camera_package_REFERENCE": {
+      "file": "_references_AI_camera_package_REFERENCE.stl",
+      "color": [
+        0.015,
+        0.025,
+        0.03
+      ],
+      "opacity": 1
+    },
+    "AI_camera_glass_REFERENCE": {
+      "file": "_references_AI_camera_glass_REFERENCE.stl",
+      "color": [
+        0.12,
+        0.24,
+        0.32
+      ],
+      "opacity": 1
+    }
+  },
+  "mounts": [
+    {
+      "label": "A",
+      "top": [
+        -94.0,
+        65.0,
+        177.8
+      ],
+      "angle": -4.075944973936918,
+      "socket": 24.6,
+      "depth": 4,
+      "M5_bore": 5.5
+    },
+    {
+      "label": "B",
+      "top": [
+        94.0,
+        65.0,
+        177.8
+      ],
+      "angle": -175.9240550260631,
+      "socket": 24.6,
+      "depth": 4,
+      "M5_bore": 5.5
+    },
+    {
+      "label": "C",
+      "top": [
+        50.8,
+        -70.0,
+        177.8
+      ],
+      "angle": 90.0,
+      "socket": 24.6,
+      "depth": 4,
+      "M5_bore": 5.5
+    }
+  ],
+  "source_leg_hashes": {
+    "clamp_lower.stl": "8b3f48e4e285191c02ab0a6717f616a68d86314dcf8d9bf6d3a0f480f948c67e",
+    "clamp_upper_A.stl": "ab273d5c795a4cc96fb5d28995f5c74793ff2b26690a66f25031d8195f179f8b",
+    "clamp_upper_B.stl": "3f87ec77f4d68d9e7aa3fc66f13202fb5296249acf384081467ca357f775768b",
+    "clamp_upper_C.stl": "87b8ec9d18cc87b74330e17c575c0c6c7459e1e6d0470b4f9434c56aa05cd661",
+    "front_dogleg.stl": "6f1297766e9ced207521a64a8b4919fe683ad37d2dceefb15e38a8f6209ab49f",
+    "side_arm_lower.stl": "30b251d421e90450a7868de6c964b57b34d0e135993c38ebd7ea560cafe3538a",
+    "side_arm_upper.stl": "c79b150e06b5cf57509307ccc835d3cd11b4375d8d9b10ad404252942e357422"
+  },
+  "camera_mount": {
+    "PCB": [
+      25,
+      23.862,
+      1.12
+    ],
+    "hole_pitch": [
+      21,
+      12.5
+    ],
+    "hole_z_relative_lens": [
+      -0.1,
+      12.4
+    ],
+    "hole_x_relative_lens": [
+      -10.5,
+      10.5
+    ],
+    "front_aperture": 10,
+    "optional_flat_window": [
+      12,
+      1
+    ]
+  },
+  "cover_screws": {
+    "hood": 2,
+    "face": 2
+  },
+  "hood_clip_right_xz": [
+    [
+      142.60000000000002,
+      9
+    ],
+    [
+      145.4,
+      11.5
+    ],
+    [
+      142.60000000000002,
+      14
+    ]
+  ],
+  "face_clip_right_xy": [
+    [
+      96.0,
+      -105
+    ],
+    [
+      98.8,
+      -102.5
+    ],
+    [
+      96.0,
+      -100
+    ]
+  ],
+  "perimeter_guide_centres_xy": [
+    [
+      -144.5,
+      -65
+    ],
+    [
+      144.5,
+      -65
+    ],
+    [
+      -143.0,
+      65
+    ],
+    [
+      143.0,
+      65
+    ]
+  ],
+  "electronics_trays_removed": true
+}

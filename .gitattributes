@@ -1,0 +1,15 @@
+# Preserve the exact imported CAD/mesh baselines used by compatibility checks.
+mower-upper-v3_2/inputs/v3_1/* binary
+mower-upper-v3_2/inputs/legacy_v1/* binary
+mower-upper-v3_2/inputs/*.step binary
+mower-upper-v3_2/references/*.step binary
+mower-upper-v2/references/*.pdf binary
+
+# Portable source files; binary input hashes must not depend on core.autocrlf.
+mower-*/*.py text eol=lf
+mower-*/*.json text eol=lf
+mower-*/*.md text eol=lf
+mower/* text eol=lf
+mower-upper-v3_2/inputs/*.md text eol=lf
+mower-platform-v1/*.csv text eol=lf
+/.gitattributes text eol=lf

@@ -106,3 +106,10 @@ __pycache__/
 /enclosure/**/*.zip
 # Tessellated copies of the original CAD parts used for concept previews.
 /enclosure/concepts/**/*.stl
+
+# Mower CAD sources and frozen inputs are tracked; exports are regenerated.
+/mower-*/output/
+/mower-*/*.zip
+/mower-*/SHA256SUMS.txt
+/mower-*/tmp/
+/mower-upper-v3_1/debug_face.py

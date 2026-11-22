@@ -456,7 +456,7 @@ function render(s) {
   $('pill').className = 'pill ' + (serious ? 'bad' : producing ? (s.errors.length ? 'warn' : 'good') : 'warn');
   show('pillText', producing ? 'Sending' : HEADLINE[s.phase] || s.phase);
   $('pill').title = producing ? 'Sending corrections' : PHASES[s.phase] || '';
-  show('sub', [s.version && 'v' + s.version, s.uptime_s != null && 'up ' + duration(s.uptime_s), s.address].filter(Boolean).join(' · '));
+  show('sub', [s.version && 'v' + s.version, s.uptime_s != null && 'up ' + duration(s.uptime_s), s.address && s.hostname, s.address].filter(Boolean).join(' · '));
 
   $('setup').hidden = !s.setup_needed;
   show('setupSsid', s.setup_ssid || '');
@@ -482,7 +482,7 @@ function render(s) {
     const where = document.createElement('div');
     where.className = 'hint';
     where.style.margin = '0';
-    where.textContent = `at ${s.address}, port ${s.direct_port}`;
+    where.textContent = s.hostname ? `at ${s.hostname} or ${s.address}, port ${s.direct_port}` : `at ${s.address}, port ${s.direct_port}`;
     $('direct').append(where);
   }
   const mount = settings.ntrip_mount ? `${settings.ntrip_host}/${settings.ntrip_mount}` : settings.ntrip_host || 'the caster';

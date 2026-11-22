@@ -41,7 +41,9 @@ pio device monitor
 1. On first start the board creates a WiFi network called `gps-base-XXXX`, with the password `gps-base-setup`.
 2. Join it and open `http://192.168.4.1`.
 3. Fill in your WiFi network, the backup caster details and a password for the page, then save. The board restarts and joins your network.
-4. Find its address in your router's device list under `gps-base`, or in the serial monitor, and open it. Log in with any user name and the page password.
+4. Open `http://gps-base.local`. If that name does not work on your device, find its address in your router's device list under `gps-base`, or in the serial monitor. Log in with any user name and the page password.
+
+The board answers to `gps-base.local` by mDNS, on your network and on the setup network, and offers its page as a web service, so it can be found whatever address the router gives it. Windows 10 and later, macOS, iOS, Linux with Avahi and Android 12 and later look these names up. A second base on the same network becomes `gps-base-2.local`, and the page shows which name it has. A fixed address on the router still helps devices that cannot look `.local` names up.
 
 If it cannot join your network for 2 minutes, the setup network comes back as well, so a changed router cannot lock it out. Holding the BOOT button for 5 seconds erases all settings.
 
@@ -82,7 +84,7 @@ Either way, once the base has heard fewer than half as many second-band signals 
 
 The board sends every correction two ways at once, so a rover can change route at any time:
 
-- **Direct over WiFi:** a rover on the same network connects to this board on port 2101. This needs no internet, password or reservation. Give the board a fixed address on your router, and put that address in the rover's settings, as `NTRIP_DIRECT_SERVER` on the [mower](https://github.com/anking/gps-rider). The page shows the address and whether a rover is connected.
+- **Direct over WiFi:** a rover on the same network connects to this board on port 2101. This needs no internet, password or reservation. Put `gps-base.local` in the rover's settings, as `NTRIP_DIRECT_SERVER` on the [mower](https://github.com/anking/gps-rider), or give the board a fixed address on your router and put that there. The page shows the name, the address and whether a rover is connected.
 - **Backup caster:** the board also uploads to RTK2go, which needs the internet and the mountpoint password. A rover uses this when it cannot reach the board directly. Leave these settings empty to run with no backup.
 
 Up to two rovers can connect directly. When a third does, the one connected longest is dropped, because a rover that lost its WiFi has no way to say so. A rover that cannot keep up is also dropped, and connects again, so it can never hold up the module or the upload.

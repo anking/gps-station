@@ -227,11 +227,13 @@ static esp_err_t get_status(httpd_req_t *req)
     // Add what only this layer knows, before the closing brace
     char address[16];
     net_address(address, sizeof(address));
+    char name[32];
+    net_local_name(name, sizeof(name));
     char update[80];
     ota_status(update, sizeof(update));
     snprintf(json + length - 1, sizeof(json) - (size_t)length + 1,
-             ",\"setup_needed\":%s,\"setup_ssid\":\"%s\",\"address\":\"%s\",\"rssi\":%d,\"uptime_s\":%lld,\"version\":\"%s\",\"update_status\":\"%s\"}",
-             settings_were_complete ? "false" : "true", net_setup_ssid(), address, net_rssi(),
+             ",\"setup_needed\":%s,\"setup_ssid\":\"%s\",\"address\":\"%s\",\"hostname\":\"%s\",\"rssi\":%d,\"uptime_s\":%lld,\"version\":\"%s\",\"update_status\":\"%s\"}",
+             settings_were_complete ? "false" : "true", net_setup_ssid(), address, name, net_rssi(),
              esp_timer_get_time() / 1000000, esp_app_get_description()->version, update);
 
     httpd_resp_set_type(req, "application/json");

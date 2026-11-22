@@ -106,3 +106,7 @@ __pycache__/
 /enclosure/**/*.zip
 # Tessellated copies of the original CAD parts used for concept previews.
 /enclosure/concepts/**/*.stl
+
+# Components the ESP-IDF component manager fetches, see src/idf_component.yml
+firmware/managed_components/
+firmware/dependencies.lock

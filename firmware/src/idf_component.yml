@@ -1,0 +1,4 @@
+# Components from the ESP-IDF registry, fetched at build time into managed_components/
+dependencies:
+  # Answers to gps-base.local, so the base can be found after its DHCP address changes
+  espressif/mdns: "1.8.2"

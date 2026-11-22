@@ -43,11 +43,14 @@ static void publish_info(void)
 {
     char address[16];
     net_address(address, sizeof(address));
+    char name[32];
+    net_local_name(name, sizeof(name));
 
     const esp_app_desc_t *app = esp_app_get_description();
-    char json[200];
-    snprintf(json, sizeof(json), "{\"model\":\"%s\",\"firmware\":\"%s\",\"project\":\"%s\",\"ui_url\":\"http://%s\"}",
-             CONFIG_IDF_TARGET, app->version, app->project_name, address);
+    char json[256];
+    snprintf(json, sizeof(json),
+             "{\"model\":\"%s\",\"firmware\":\"%s\",\"project\":\"%s\",\"ui_url\":\"http://%s\",\"hostname\":\"%s\"}",
+             CONFIG_IDF_TARGET, app->version, app->project_name, address, name);
 
     esp_mqtt_client_publish(client, topic_info, json, 0, 1, 1);
 }

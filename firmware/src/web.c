@@ -8,10 +8,12 @@
 #include "esp_app_desc.h"
 #include "esp_http_server.h"
 #include "esp_log.h"
+#include "esp_mac.h"
 #include "esp_ota_ops.h"
 #include "esp_system.h"
 #include "esp_timer.h"
 #include "mbedtls/base64.h"
+#include "mbedtls/md.h"
 #include "net.h"
 #include "ota.h"
 
@@ -25,6 +27,9 @@ extern const char leaflet_css_end[] asm("_binary_leaflet_css_gz_end");
 #define MAX_FORM_LENGTH 1100
 #define MIN_UI_PASSWORD_LENGTH 8
 #define OTA_CHUNK_SIZE 2048
+#define SESSION_COOKIE "base_session"
+#define SESSION_MAX_AGE_S (30 * 24 * 60 * 60)
+#define FAILED_SIGN_IN_DELAY_MS 1000
 
 static const char *TAG = "web";
 
@@ -32,6 +37,7 @@ static base_station_t *base;
 static SemaphoreHandle_t lock;
 static settings_t settings;
 static bool settings_were_complete;
+static char session_token[65];
 
 // --- Access ---------------------------------------------------------------------------------
 
@@ -45,24 +51,57 @@ static bool equal_in_constant_time(const char *a, const char *b)
     return difference == 0;
 }
 
+// The sign-in page's cookie: a keyed hash of the page password and this board's MAC. It outlasts a restart or an update,
+// and a new password signs every browser out. The board keeps no time, so the cookie's 30 days in the browser are the
+// only expiry.
+static void make_session_token(void)
+{
+    session_token[0] = '\0';
+    if (settings.ui_password[0] == '\0') return;
+
+    uint8_t mac[6] = { 0 };
+    esp_read_mac(mac, ESP_MAC_WIFI_STA);
+    char message[40];
+    snprintf(message, sizeof(message), "gps-base session %02x%02x%02x%02x%02x%02x", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+
+    unsigned char digest[32];
+    if (mbedtls_md_hmac(mbedtls_md_info_from_type(MBEDTLS_MD_SHA256), (const unsigned char *)settings.ui_password,
+                        strlen(settings.ui_password), (const unsigned char *)message, strlen(message), digest) != 0) {
+        return;
+    }
+    for (size_t i = 0; i < sizeof(digest); i++) snprintf(session_token + 2 * i, 3, "%02x", digest[i]);
+}
+
+static bool has_session(httpd_req_t *req)
+{
+    if (session_token[0] == '\0') return false;
+
+    char value[80];
+    size_t size = sizeof(value);
+    return httpd_req_get_cookie_val(req, SESSION_COOKIE, value, &size) == ESP_OK && equal_in_constant_time(value, session_token);
+}
+
+// The password in a Basic header, as scripts send it
+static bool has_basic_password(httpd_req_t *req)
+{
+    char header[192];
+    if (httpd_req_get_hdr_value_str(req, "Authorization", header, sizeof(header)) != ESP_OK || strncmp(header, "Basic ", 6) != 0) return false;
+
+    unsigned char decoded[140];
+    size_t length = 0;
+    if (mbedtls_base64_decode(decoded, sizeof(decoded) - 1, &length, (const unsigned char *)header + 6, strlen(header + 6)) != 0) return false;
+    decoded[length] = '\0';
+    const char *colon = strchr((const char *)decoded, ':');
+    return colon != NULL && equal_in_constant_time(colon + 1, settings.ui_password);
+}
+
 // Until the UI has a password the device is only reachable on its own setup network.
 static bool authorized(httpd_req_t *req)
 {
-    if (!settings_were_complete) return true;
+    if (!settings_were_complete || has_session(req) || has_basic_password(req)) return true;
 
-    char header[192];
-    if (httpd_req_get_hdr_value_str(req, "Authorization", header, sizeof(header)) == ESP_OK && strncmp(header, "Basic ", 6) == 0) {
-        unsigned char decoded[140];
-        size_t length = 0;
-        if (mbedtls_base64_decode(decoded, sizeof(decoded) - 1, &length, (const unsigned char *)header + 6, strlen(header + 6)) == 0) {
-            decoded[length] = '\0';
-            const char *colon = strchr((const char *)decoded, ':');
-            if (colon != NULL && equal_in_constant_time(colon + 1, settings.ui_password)) return true;
-        }
-    }
-
+    // No WWW-Authenticate header, which is what made browsers show their own password box. The page asks instead.
     httpd_resp_set_status(req, "401 Unauthorized");
-    httpd_resp_set_hdr(req, "WWW-Authenticate", "Basic realm=\"GPS Base\", charset=\"UTF-8\"");
     httpd_resp_sendstr(req, "Password required");
     return false;
 }
@@ -137,23 +176,56 @@ static esp_err_t reply(httpd_req_t *req, const char *status, const char *message
     return httpd_resp_sendstr(req, json);
 }
 
+// --- Signing in ------------------------------------------------------------------------------
+
+static esp_err_t redirect(httpd_req_t *req, const char *location)
+{
+    httpd_resp_set_status(req, "303 See Other");
+    httpd_resp_set_hdr(req, "Location", location);
+    httpd_resp_set_hdr(req, "Cache-Control", "no-store");
+    return httpd_resp_send(req, NULL, 0);
+}
+
+// The page's sign-in form posts here, and the browser comes back to the page either way
+static esp_err_t post_login(httpd_req_t *req)
+{
+    char body[400];
+    char password[3 * sizeof(settings.ui_password)]; // Room for it encoded, before it is decoded
+    bool right = session_token[0] && read_form(req, body, sizeof(body)) && form_value(body, "password", password, sizeof(password))
+                 && equal_in_constant_time(password, settings.ui_password);
+
+    if (!right) {
+        vTaskDelay(pdMS_TO_TICKS(FAILED_SIGN_IN_DELAY_MS)); // Slows guessing down
+        return redirect(req, "/?signin=wrong");
+    }
+
+    // Lax, so following a link to the page finds the session, while other sites' forms and scripts do not carry it
+    char cookie[160];
+    snprintf(cookie, sizeof(cookie), SESSION_COOKIE "=%s; Max-Age=%d; Path=/; HttpOnly; SameSite=Lax", session_token, SESSION_MAX_AGE_S);
+    httpd_resp_set_hdr(req, "Set-Cookie", cookie);
+    return redirect(req, "/");
+}
+
+static esp_err_t post_logout(httpd_req_t *req)
+{
+    httpd_resp_set_hdr(req, "Set-Cookie", SESSION_COOKIE "=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax");
+    return redirect(req, "/");
+}
+
 // --- Handlers --------------------------------------------------------------------------------
 
+// The page holds nothing secret, and shows its sign-in form when the device asks for the password
 static esp_err_t get_index(httpd_req_t *req)
 {
-    if (!authorized(req)) return ESP_OK;
-
     httpd_resp_set_type(req, "text/html");
     httpd_resp_set_hdr(req, "Cache-Control", "no-cache");
     return httpd_resp_send(req, index_html_start, index_html_end - index_html_start - 1);
 }
 
 // The map library, stored compressed and sent straight from flash, so it costs no RAM. Its name carries its version,
-// so a browser can keep it.
+// so a browser can keep it. It is public, as the page is, so the page has it when it signs in.
 static esp_err_t send_stored(httpd_req_t *req, const char *type, const char *start, const char *end)
 {
-    if (!authorized(req)) return ESP_OK;
-
     httpd_resp_set_type(req, type);
     httpd_resp_set_hdr(req, "Content-Encoding", "gzip");
     httpd_resp_set_hdr(req, "Cache-Control", "max-age=31536000, immutable");
@@ -227,11 +299,13 @@ static esp_err_t get_status(httpd_req_t *req)
     // Add what only this layer knows, before the closing brace
     char address[16];
     net_address(address, sizeof(address));
+    char name[32];
+    net_local_name(name, sizeof(name));
     char update[80];
     ota_status(update, sizeof(update));
     snprintf(json + length - 1, sizeof(json) - (size_t)length + 1,
-             ",\"setup_needed\":%s,\"setup_ssid\":\"%s\",\"address\":\"%s\",\"rssi\":%d,\"uptime_s\":%lld,\"version\":\"%s\",\"update_status\":\"%s\"}",
-             settings_were_complete ? "false" : "true", net_setup_ssid(), address, net_rssi(),
+             ",\"setup_needed\":%s,\"setup_ssid\":\"%s\",\"address\":\"%s\",\"hostname\":\"%s\",\"rssi\":%d,\"uptime_s\":%lld,\"version\":\"%s\",\"update_status\":\"%s\"}",
+             settings_were_complete ? "false" : "true", net_setup_ssid(), address, name, net_rssi(),
              esp_timer_get_time() / 1000000, esp_app_get_description()->version, update);
 
     httpd_resp_set_type(req, "application/json");
@@ -420,10 +494,11 @@ void web_start(base_station_t *base_station, SemaphoreHandle_t base_lock, const 
     lock = base_lock;
     settings = *current;
     settings_were_complete = settings_complete(current);
+    make_session_token();
 
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
     config.stack_size = 8192;
-    config.max_uri_handlers = 16;
+    config.max_uri_handlers = 20;
     config.lru_purge_enable = true;
 
     httpd_handle_t server = NULL;
@@ -443,6 +518,8 @@ void web_start(base_station_t *base_station, SemaphoreHandle_t base_lock, const 
         { .uri = "/api/restart", .method = HTTP_POST, .handler = post_restart },
         { .uri = "/api/firmware", .method = HTTP_POST, .handler = post_firmware },
         { .uri = "/api/update/check", .method = HTTP_POST, .handler = post_update_check },
+        { .uri = "/api/login", .method = HTTP_POST, .handler = post_login },
+        { .uri = "/api/logout", .method = HTTP_POST, .handler = post_logout },
     };
     for (size_t i = 0; i < sizeof(routes) / sizeof(routes[0]); i++) {
         ESP_ERROR_CHECK(httpd_register_uri_handler(server, &routes[i]));

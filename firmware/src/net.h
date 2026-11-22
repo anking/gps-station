@@ -15,6 +15,9 @@ bool net_has_internet_path(void);
 // The current station address as text, or an empty string.
 void net_address(char *out, size_t capacity);
 
+// The name the board answers to on the local network, such as gps-base.local, or an empty string.
+void net_local_name(char *out, size_t capacity);
+
 int net_rssi(void);
 
 const char *net_setup_ssid(void);

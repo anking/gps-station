@@ -11,7 +11,9 @@
 #include "esp_wifi.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/timers.h"
+#include "mdns.h"
 
+#define HOSTNAME "gps-base"
 #define STATION_RETRY_MS 5000
 #define SETUP_FALLBACK_MS (2 * 60 * 1000)
 
@@ -21,6 +23,7 @@ static esp_netif_t *station_netif;
 static volatile bool have_address;
 static volatile bool setup_network_active;
 static bool station_configured;
+static bool mdns_running;
 static char setup_ssid[32];
 static TimerHandle_t retry_timer;
 static TimerHandle_t fallback_timer;
@@ -70,6 +73,21 @@ static void on_wifi_event(void *arg, esp_event_base_t base, int32_t id, void *da
     }
 }
 
+// Answers to gps-base.local on both networks, so the page and rovers can find the board whatever address the router
+// hands out. A second base on the same network is renamed by mDNS, to gps-base-2.local and so on.
+static void start_mdns(void)
+{
+    esp_err_t result = mdns_init();
+    if (result != ESP_OK) {
+        ESP_LOGW(TAG, "mDNS did not start: %s", esp_err_to_name(result));
+        return;
+    }
+    mdns_hostname_set(HOSTNAME);
+    mdns_instance_name_set("GPS base station");
+    mdns_service_add(NULL, "_http", "_tcp", 80, NULL, 0);
+    mdns_running = true;
+}
+
 void net_start(const settings_t *settings)
 {
     uint8_t mac[6] = { 0 };
@@ -81,7 +99,8 @@ void net_start(const settings_t *settings)
 
     station_netif = esp_netif_create_default_wifi_sta();
     esp_netif_create_default_wifi_ap();
-    esp_netif_set_hostname(station_netif, "gps-base");
+    esp_netif_set_hostname(station_netif, HOSTNAME);
+    start_mdns();
 
     wifi_init_config_t init = WIFI_INIT_CONFIG_DEFAULT();
     ESP_ERROR_CHECK(esp_wifi_init(&init));
@@ -130,6 +149,13 @@ void net_address(char *out, size_t capacity)
     if (have_address && esp_netif_get_ip_info(station_netif, &info) == ESP_OK) {
         snprintf(out, capacity, IPSTR, IP2STR(&info.ip));
     }
+}
+
+void net_local_name(char *out, size_t capacity)
+{
+    out[0] = '\0';
+    char name[MDNS_NAME_BUF_LEN];
+    if (mdns_running && mdns_hostname_get(name) == ESP_OK && name[0]) snprintf(out, capacity, "%s.local", name);
 }
 
 int net_rssi(void)

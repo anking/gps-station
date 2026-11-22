@@ -41,7 +41,7 @@ pio device monitor
 1. On first start the board creates a WiFi network called `gps-base-XXXX`, with the password `gps-base-setup`.
 2. Join it and open `http://192.168.4.1`.
 3. Fill in your WiFi network, the backup caster details and a password for the page, then save. The board restarts and joins your network.
-4. Open `http://gps-base.local`. If that name does not work on your device, find its address in your router's device list under `gps-base`, or in the serial monitor. Log in with any user name and the page password.
+4. Open `http://gps-base.local`. If that name does not work on your device, find its address in your router's device list under `gps-base`, or in the serial monitor. Sign in on the page with the page password. A browser stays signed in for 30 days, and a new password signs every browser out. Scripts can still send the password with HTTP Basic, under any user name.
 
 The board answers to `gps-base.local` by mDNS, on your network and on the setup network, and offers its page as a web service, so it can be found whatever address the router gives it. Windows 10 and later, macOS, iOS, Linux with Avahi and Android 12 and later look these names up. A second base on the same network becomes `gps-base-2.local`, and the page shows which name it has. A fixed address on the router still helps devices that cannot look `.local` names up.
 
